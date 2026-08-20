@@ -124,6 +124,71 @@ export interface V3Collateral {
   assetDecimals: number;
   borrowLTV: string; // basis points, e.g. "8200" = 0.82
   liquidationLTV: string;
+  currentLiquidationLTV?: string;
+  initialLiquidationLTV?: string;
+  targetTimestamp?: string;
+  rampDuration?: number;
+  oraclePriceRaw?: {
+    queryFailure: boolean;
+    queryFailureReason?: string;
+    amountIn?: string;
+    amountOutMid?: string;
+    amountOutBid?: string;
+    amountOutAsk?: string;
+    timestamp?: string;
+  };
+}
+
+export interface V3VaultCaps {
+  supplyCap: string;
+  borrowCap: string;
+}
+
+export interface V3VaultFees {
+  interestFee: number;
+  accumulatedFeesShares?: string;
+  accumulatedFeesAssets?: string;
+  governorFeeReceiver?: string;
+  protocolFeeReceiver?: string;
+  protocolFeeShare?: number;
+}
+
+export interface V3VaultHooks {
+  hookedOperations: Record<string, boolean>;
+  hookTarget: string;
+}
+
+export interface V3VaultLiquidation {
+  maxLiquidationDiscount: number;
+  liquidationCoolOffTime?: number;
+  socializeDebt: boolean;
+}
+
+export interface V3InterestRateModel {
+  address: string;
+  type: string;
+  data?: Record<string, unknown> | null;
+}
+
+export interface V3OracleInfo {
+  oracle: string;
+  name?: string;
+  detailedInfo?: {
+    oracle?: string;
+    name?: string;
+    resolvedAdapters?: Array<{
+      oracle: string;
+      name?: string;
+      base?: string;
+      quote?: string;
+    }>;
+    resolvedVaults?: Array<{
+      vault: string;
+      quote?: string;
+      asset?: string;
+      resolvedAssets?: string[];
+    }>;
+  };
 }
 
 // Vault detail from POST /v3/evk/vaults/batch (subset of fields we read)
@@ -136,12 +201,27 @@ export interface V3VaultDetail {
   decimals: number;
   asset: EvkVaultAsset;
   totalAssets: string;
+  totalShares?: string;
   totalBorrows: string;
+  totalBorrowed?: string;
+  totalCash?: string;
   totalSupplyUsd: number;
   totalBorrowsUsd: number;
   utilization: number;
   supplyApy: number; // percent, e.g. 1.45 = 1.45%
   borrowApy: number; // percent
+  supplyCap?: string;
+  borrowCap?: string;
+  caps?: V3VaultCaps;
+  fees?: V3VaultFees;
+  hooks?: V3VaultHooks;
+  liquidation?: V3VaultLiquidation;
+  interestRateModel?: V3InterestRateModel;
+  governor?: string;
+  governorAdmin?: string;
+  oracle?: V3OracleInfo;
+  unitOfAccount?: EvkVaultAsset;
+  timestamp?: string;
   collaterals?: V3Collateral[];
 }
 

@@ -37,13 +37,7 @@ const CHAIN_LOGOS = {
   59144: NetworkLinea
 };
 
-export const ChainIcon: React.FC<ChainIconProps> = ({
-  chainId,
-  showName = false,
-  size = 24,
-  tooltip = true,
-  ...boxProps
-}) => {
+export const ChainIcon: React.FC<ChainIconProps> = ({ chainId, showName = false, size = 24, tooltip = true, ...boxProps }) => {
   if (!chainId) return null;
 
   const name = getChainName(chainId);
