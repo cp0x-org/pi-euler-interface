@@ -38,6 +38,8 @@ import { ChainBadge } from 'components/ChainIcon';
 import { ERC20_ABI, ERC4626_ABI } from '@/contracts/erc4626';
 import { TokenIcon } from 'components/TokenIcon';
 import { EulerProduct, V3VaultDetail } from 'types/euler';
+import useTranslate from 'hooks/useTranslate';
+import { getChainName } from 'utils/chains';
 import { formatShortUSDS } from 'utils/formatters';
 
 type SortMode = 'totalBorrowed' | 'borrowApy' | 'maxMultiplier' | 'maxLtv' | 'availableLiquidity' | 'name';
@@ -111,6 +113,7 @@ const ROWS_PER_PAGE = 25;
 
 export default function BorrowPage() {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const { chains } = getRuntimeConfig();
 
@@ -320,9 +323,9 @@ export default function BorrowPage() {
           <AccountBalanceWalletOutlinedIcon sx={{ color: theme.palette.secondary.main, fontSize: 30 }} />
         </Avatar>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h2">Borrow</Typography>
+          <Typography variant="h2">{t('borrow.title', 'Borrow')}</Typography>
           <Typography variant="body1" sx={{ color: theme.palette.grey[500] }}>
-            Pick a collateral and an asset to borrow. Open a position or lever it up with Multiply.
+            {t('borrow.subtitle', 'Pick a collateral and an asset to borrow. Open a position or lever it up with Multiply.')}
           </Typography>
         </Box>
       </Box>
@@ -332,10 +335,11 @@ export default function BorrowPage() {
           <TextField
             fullWidth
             size="small"
-            placeholder="Search by collateral, asset, curator, network..."
+            placeholder={t('borrow.searchPlaceholder', 'Search by collateral, asset, curator, network...')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             slotProps={{
+              htmlInput: { 'aria-label': t('borrow.searchLabel', 'Search borrow markets by collateral, asset, curator or network') },
               input: {
                 startAdornment: (
                   <InputAdornment position="start">
@@ -355,14 +359,15 @@ export default function BorrowPage() {
             size="small"
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
+            inputProps={{ 'aria-label': t('borrow.sortLabel', 'Sort borrow markets by') }}
             startAdornment={<SwapVertIcon sx={{ fontSize: 18, marginRight: 0.5, color: 'text.secondary' }} />}
           >
-            <MenuItem value="totalBorrowed">Total borrowed</MenuItem>
-            <MenuItem value="borrowApy">Borrow APY</MenuItem>
-            <MenuItem value="maxMultiplier">Max multiplier</MenuItem>
-            <MenuItem value="maxLtv">Max LTV</MenuItem>
-            <MenuItem value="availableLiquidity">Liquidity</MenuItem>
-            <MenuItem value="name">Name</MenuItem>
+            <MenuItem value="totalBorrowed">{t('common.totalBorrowed', 'Total borrowed')}</MenuItem>
+            <MenuItem value="borrowApy">{t('common.borrowApy', 'Borrow APY')}</MenuItem>
+            <MenuItem value="maxMultiplier">{t('common.maxMultiplier', 'Max multiplier')}</MenuItem>
+            <MenuItem value="maxLtv">{t('common.maxLtv', 'Max LTV')}</MenuItem>
+            <MenuItem value="availableLiquidity">{t('common.liquidity', 'Liquidity')}</MenuItem>
+            <MenuItem value="name">{t('common.name', 'Name')}</MenuItem>
           </Select>
         </Grid>
         <Grid size={{ xs: 6, md: 2 }}>
@@ -378,7 +383,7 @@ export default function BorrowPage() {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Risk manager"
+                label={t('common.riskManager', 'Risk manager')}
                 slotProps={{
                   input: {
                     ...params.InputProps,
@@ -407,7 +412,7 @@ export default function BorrowPage() {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Collateral"
+                label={t('common.collateral', 'Collateral')}
                 slotProps={{
                   input: {
                     ...params.InputProps,
@@ -436,7 +441,7 @@ export default function BorrowPage() {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Borrow"
+                label={t('common.borrow', 'Borrow')}
                 slotProps={{
                   input: {
                     ...params.InputProps,
@@ -456,35 +461,40 @@ export default function BorrowPage() {
 
       {failedChainCount > 0 && !showFullError && (
         <Alert severity="warning" sx={{ marginBottom: 2 }}>
-          Could not fully load {failedChainCount} of {chains.length} configured chains. Showing available market data.
+          {t('borrow.partialFailure', 'Could not fully load {failed} of {total} configured chains. Showing available market data.', {
+            failed: failedChainCount,
+            total: chains.length
+          })}
         </Alert>
       )}
 
       {loading && visiblePairs.length === 0 && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', padding: 7 }}>
-          <CircularProgress />
+        <Box role="status" aria-live="polite" sx={{ display: 'flex', justifyContent: 'center', padding: 7 }}>
+          <CircularProgress aria-label={t('borrow.loading', 'Loading borrow markets')} />
         </Box>
       )}
 
       {showFullError && (
         <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-          <Typography color="error">Failed to load Euler Borrow data: {(error as Error).message}</Typography>
+          <Typography color="error">
+            {t('borrow.loadFailed', 'Failed to load Euler Borrow data: {message}', { message: (error as Error).message })}
+          </Typography>
           <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginTop: 1 }}>
-            Product labels and EVK metrics come directly from the configured public Euler endpoints.
+            {t('common.evkDataSourceHint', 'Product labels and EVK metrics come directly from the configured public Euler endpoints.')}
           </Typography>
         </Paper>
       )}
 
       {!loading && !showFullError && visiblePairs.length === 0 && (
-        <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-          <Typography>No borrow markets match the current filters.</Typography>
+        <Paper role="status" sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
+          <Typography>{t('borrow.empty', 'No borrow markets match the current filters.')}</Typography>
         </Paper>
       )}
 
       {visiblePairs.length > 0 && (
         <>
           <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 1 }}>
-            {visiblePairs.length} borrow markets
+            {t('borrow.count', '{count} borrow markets', { count: visiblePairs.length })}
           </Typography>
           <Stack spacing={1}>
             {pagePairs.map((pair) => (
@@ -500,6 +510,12 @@ export default function BorrowPage() {
                 }}
                 role="link"
                 tabIndex={0}
+                aria-label={t('borrow.row.open', 'Open borrow market {collateral} to {borrow} in {market} on {network}', {
+                  collateral: pair.collateralSymbol,
+                  borrow: pair.borrowSymbol,
+                  market: pair.marketName,
+                  network: getChainName(pair.chainId)
+                })}
                 sx={{
                   padding: { xs: 1.5, md: 2 },
                   border: `1px solid ${theme.palette.divider}`,
@@ -542,23 +558,27 @@ export default function BorrowPage() {
                     </Box>
                   </Grid>
                   <Grid size={{ xs: 4, md: 1.5 }}>
-                    <Metric label="Borrow APY" value={`${pair.borrowApy.toFixed(2)}%`} valueColor={theme.palette.warning.main} />
+                    <Metric
+                      label={t('common.borrowApy', 'Borrow APY')}
+                      value={`${pair.borrowApy.toFixed(2)}%`}
+                      valueColor={theme.palette.warning.main}
+                    />
                   </Grid>
                   <Grid size={{ xs: 4, md: 1.5 }}>
-                    <Metric label="Max LTV" value={`${(pair.borrowLtv * 100).toFixed(0)}%`} />
+                    <Metric label={t('common.maxLtv', 'Max LTV')} value={`${(pair.borrowLtv * 100).toFixed(0)}%`} />
                   </Grid>
                   <Grid size={{ xs: 4, md: 1.6 }}>
                     <Metric
-                      label="Max multiplier"
+                      label={t('common.maxMultiplier', 'Max multiplier')}
                       value={Number.isFinite(pair.maxMultiplier) ? `${pair.maxMultiplier.toFixed(2)}×` : '—'}
                     />
                   </Grid>
                   <Grid size={{ xs: 6, md: 2 }}>
-                    <Metric label="Available" value={`$${formatShortUSDS(pair.availableLiquidityUsd)}`} />
+                    <Metric label={t('common.available', 'Available')} value={`$${formatShortUSDS(pair.availableLiquidityUsd)}`} />
                   </Grid>
                   <Grid size={{ xs: 6, md: 1.8 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, justifyContent: { md: 'flex-end' } }}>
-                      <Avatar src={pair.riskManagerLogo} alt={pair.riskManagerName} sx={{ width: 20, height: 20, fontSize: 9 }}>
+                      <Avatar src={pair.riskManagerLogo} alt="" aria-hidden="true" sx={{ width: 20, height: 20, fontSize: 9 }}>
                         {pair.riskManagerName === '-' ? '-' : pair.riskManagerName.slice(0, 1)}
                       </Avatar>
                       <Typography variant="body2" sx={{ color: theme.palette.grey[400] }} noWrap>
@@ -573,8 +593,8 @@ export default function BorrowPage() {
 
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, marginTop: 2.5 }}>
             <FormControl variant="outlined" size="small" sx={{ display: { xs: 'none', sm: 'inline-flex' } }}>
-              <InputLabel id="borrow-rows-label">Rows</InputLabel>
-              <Select labelId="borrow-rows-label" label="Rows" value={ROWS_PER_PAGE} disabled sx={{ minWidth: 80 }}>
+              <InputLabel id="borrow-rows-label">{t('common.rows', 'Rows')}</InputLabel>
+              <Select labelId="borrow-rows-label" label={t('common.rows', 'Rows')} value={ROWS_PER_PAGE} disabled sx={{ minWidth: 80 }}>
                 <MenuItem value={ROWS_PER_PAGE}>{ROWS_PER_PAGE}</MenuItem>
               </Select>
             </FormControl>

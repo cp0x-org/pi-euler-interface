@@ -13,6 +13,7 @@ import { useAccount, useSwitchChain } from 'wagmi';
 import { dispatchInfo, dispatchSuccess, dispatchError } from 'utils/snackbar';
 import { getChainName } from 'utils/chains';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import { ArrowRightAlt } from '@mui/icons-material';
 import ActionFormsMain from 'views/home/market/ActionFormsMain';
 import { mockMarkets } from 'mocks/markets';
@@ -26,6 +27,7 @@ interface MockPosition {
 }
 
 export default function MarketDetailPage() {
+  const t = useTranslate();
   const theme = useTheme();
 
   const { marketId } = useParams<{ marketId: string }>();
@@ -88,7 +90,7 @@ export default function MarketDetailPage() {
     return (
       <Box sx={{ padding: 2 }}>
         <Typography variant="h5" color="error">
-          Market not found
+          {t('market.notFound', 'Market not found')}
         </Typography>
       </Box>
     );
@@ -123,7 +125,7 @@ export default function MarketDetailPage() {
                   {marketData.collateralAsset?.symbol || 'N/A'}
                 </Typography>
                 {marketData.collateralAsset?.address && (
-                  <Tooltip title={copySuccessMsg || 'Copy address'} placement="top">
+                  <Tooltip title={copySuccessMsg || t('common.copyAddress', 'Copy address')} placement="top">
                     <IconButton onClick={() => copyToClipboard(marketData.collateralAsset?.address || '')} sx={{ padding: '3px' }}>
                       <ContentCopyIcon sx={{ fontSize: '16px', color: theme.palette.grey[500] }} />
                     </IconButton>
@@ -136,7 +138,7 @@ export default function MarketDetailPage() {
                   {marketData.loanAsset?.symbol || 'N/A'}
                 </Typography>
                 {marketData.loanAsset?.address && (
-                  <Tooltip title={copySuccessMsg || 'Copy address'} placement="top">
+                  <Tooltip title={copySuccessMsg || t('common.copyAddress', 'Copy address')} placement="top">
                     <IconButton onClick={() => copyToClipboard(marketData.loanAsset?.address || '')} sx={{ padding: '3px' }}>
                       <ContentCopyIcon sx={{ fontSize: '16px', color: theme.palette.grey[500] }} />
                     </IconButton>
@@ -153,7 +155,7 @@ export default function MarketDetailPage() {
                 <Stack spacing={0.5}>
                   <Typography variant="h4">{`${((marketData.state?.utilization || 0) * 100).toFixed(2)}%`}</Typography>
                   <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                    Utilization
+                    {t('common.utilization', 'Utilization')}
                   </Typography>
                 </Stack>
               </Grid>
@@ -161,7 +163,7 @@ export default function MarketDetailPage() {
                 <Stack spacing={0.5}>
                   <Typography variant="h4">{marketData.state.sizeUsd ? formatShortUSDS(marketData.state.sizeUsd) : 'n/a'}</Typography>
                   <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                    Market Size
+                    {t('market.size', 'Market Size')}
                   </Typography>
                 </Stack>
               </Grid>
@@ -171,7 +173,7 @@ export default function MarketDetailPage() {
                     {marketData.state.totalLiquidityUsd ? formatShortUSDS(marketData.state.totalLiquidityUsd) : 'n/a'}
                   </Typography>
                   <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                    Liquidity
+                    {t('common.liquidity', 'Liquidity')}
                   </Typography>
                 </Stack>
               </Grid>
@@ -181,7 +183,7 @@ export default function MarketDetailPage() {
                     {marketData.state.dailyNetBorrowApy ? `${(marketData.state.dailyNetBorrowApy * 100).toFixed(2)}%` : 'n/a'}
                   </Typography>
                   <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                    Borrow Rate
+                    {t('market.borrowRate', 'Borrow Rate')}
                   </Typography>
                 </Stack>
               </Grid>
@@ -209,7 +211,7 @@ export default function MarketDetailPage() {
             {accrualPosition ? (
               <Paper>
                 <Typography variant="h4" gutterBottom sx={{ marginBottom: '24px' }}>
-                  Your Position
+                  {t('market.yourPosition', 'Your Position')}
                 </Typography>
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, sm: 6 }}>
@@ -225,7 +227,7 @@ export default function MarketDetailPage() {
                     >
                       <Stack spacing={'20px'}>
                         <Typography variant="h5" sx={{ fontWeight: 400, color: theme.palette.grey[500] }}>
-                          Loan ({marketData.loanAsset?.symbol})
+                          {t('market.loanOf', 'Loan ({symbol})', { symbol: marketData.loanAsset?.symbol ?? '' })}
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Typography variant="h3" sx={{ color: isChanged ? theme.palette.grey[500] : 'inherit' }}>
@@ -263,7 +265,7 @@ export default function MarketDetailPage() {
                     >
                       <Stack spacing={'20px'}>
                         <Typography variant="h5" sx={{ fontWeight: 400, color: theme.palette.grey[500] }}>
-                          Collateral ({marketData.collateralAsset?.symbol})
+                          {t('market.collateralOf', 'Collateral ({symbol})', { symbol: marketData.collateralAsset?.symbol ?? '' })}
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Typography variant="h3" sx={{ color: isChanged ? theme.palette.grey[500] : 'inherit' }}>
@@ -303,7 +305,7 @@ export default function MarketDetailPage() {
                     >
                       <Stack spacing={'20px'}>
                         <Typography variant="h5" sx={{ fontWeight: 400, color: theme.palette.grey[500] }}>
-                          LTV (%)
+                          {t('market.ltvPercent', 'LTV (%)')}
                         </Typography>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Typography variant="h3" sx={{ color: isChanged ? theme.palette.grey[500] : 'inherit' }}>
@@ -352,11 +354,11 @@ export default function MarketDetailPage() {
             ) : (
               <Paper>
                 <Typography variant="h4" gutterBottom sx={{ marginBottom: '16px' }}>
-                  Your Position
+                  {t('market.yourPosition', 'Your Position')}
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
                 <Typography variant="body1" sx={{ color: theme.palette.grey[500] }}>
-                  You have no open position in this market.
+                  {t('market.noPosition', 'You have no open position in this market.')}
                 </Typography>
               </Paper>
             )}

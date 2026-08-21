@@ -1,6 +1,7 @@
 import { ContentCopy } from '@mui/icons-material';
 import { Box, Tooltip, Typography } from '@mui/material';
 import { useSnackbar } from 'notistack';
+import useTranslate from 'hooks/useTranslate';
 import { shortenAddress } from 'utils/formatters';
 
 // Component for address with copy functionality
@@ -12,20 +13,21 @@ interface CopyableAddressProps {
 
 export const CopyableAddress = ({ address, symbol, onClick }: CopyableAddressProps) => {
   const { enqueueSnackbar } = useSnackbar();
+  const t = useTranslate();
 
   const copyToClipboard = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent row click event
     navigator.clipboard
       .writeText(address)
       .then(() => {
-        enqueueSnackbar('Address copied to clipboard!', {
+        enqueueSnackbar(t('common.addressCopied', 'Address copied to clipboard!'), {
           variant: 'success',
           autoHideDuration: 2000
         });
       })
       .catch((err) => {
         console.error('Failed to copy address:', err);
-        enqueueSnackbar('Failed to copy address', {
+        enqueueSnackbar(t('common.addressCopyFailed', 'Failed to copy address'), {
           variant: 'error'
         });
       });
@@ -42,7 +44,7 @@ export const CopyableAddress = ({ address, symbol, onClick }: CopyableAddressPro
       onClick={onClick}
     >
       <Typography component="span">{symbol ? symbol : shortenAddress(address)}</Typography>
-      <Tooltip title="Copy full address">
+      <Tooltip title={t('common.copyFullAddress', 'Copy full address')}>
         <ContentCopy
           fontSize="small"
           onClick={copyToClipboard}

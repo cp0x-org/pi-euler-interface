@@ -6,6 +6,7 @@ import Box from '@mui/material/Box';
 // project imports
 import LogoSection from '../LogoSection';
 import ConnectButtonCustom from 'components/ConnectButtonCustom';
+import LanguageSwitcher from 'components/LanguageSwitcher';
 import HeaderMenu from './HeaderMenu';
 
 // ==============================|| MAIN NAVBAR / HEADER ||============================== //
@@ -27,8 +28,9 @@ export default function Header() {
       <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-start' }}>
         <HeaderMenu />
       </Box>
-      {/* connect wallet */}
+      {/* language + connect wallet */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <LanguageSwitcher />
         <ConnectButtonCustom chainStatus="icon" showBalance={false} />
       </Box>
     </>

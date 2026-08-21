@@ -31,6 +31,7 @@ import ExploreMarketExperience, { type ExploreResolvedSummary } from 'features/e
 import { V3VaultDetail } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
 import { getRuntimeConfig } from '@/appconfig/runtime';
+import useTranslate from 'hooks/useTranslate';
 
 type SortMode = 'active' | 'name' | 'totalSupply' | 'totalBorrowed' | 'maxRoe';
 
@@ -67,6 +68,7 @@ function deepLinkTarget(params: URLSearchParams): string | null {
 
 export default function ExplorePage() {
   const theme = useTheme();
+  const t = useTranslate();
   const { chains } = getRuntimeConfig();
   const [searchParams] = useSearchParams();
 
@@ -293,42 +295,65 @@ export default function ExplorePage() {
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       {/* Page header */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 3, marginTop: 1 }}>
-        <Avatar variant="rounded" sx={{ width: 56, height: 56, bgcolor: 'transparent', border: `1px solid ${theme.palette.divider}` }}>
+        <Avatar
+          aria-hidden="true"
+          variant="rounded"
+          sx={{ width: 56, height: 56, bgcolor: 'transparent', border: `1px solid ${theme.palette.divider}` }}
+        >
           <HubOutlinedIcon sx={{ color: theme.palette.secondary.main }} />
         </Avatar>
         <Box>
-          <Typography variant="h2">Explore</Typography>
+          <Typography variant="h2" component="h1">
+            {t('explore.title', 'Explore')}
+          </Typography>
           <Typography variant="body1" sx={{ color: theme.palette.grey[500] }}>
-            Discover lending markets across Euler. Filter by asset, risk manager, or market type.
+            {t('explore.subtitle', 'Discover lending markets across Euler. Filter by asset, risk manager, or market type.')}
           </Typography>
         </Box>
       </Box>
 
       {/* Toolbar filters the combined market list from every configured network. */}
-      <Grid container spacing={1.5} sx={{ marginBottom: 3 }} alignItems="center">
+      <Grid
+        container
+        component="search"
+        aria-label={t('explore.filtersLabel', 'Filter markets')}
+        spacing={1.5}
+        sx={{ marginBottom: 3 }}
+        alignItems="center"
+      >
         <Grid size={{ xs: 12, md: 4.5 }}>
           <TextField
             fullWidth
             size="small"
-            placeholder="Search by asset, market, curator, network..."
+            type="search"
+            placeholder={t('explore.searchPlaceholder', 'Search by asset, market, curator, network...')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              )
+            slotProps={{
+              htmlInput: { 'aria-label': t('explore.searchLabel', 'Search markets by asset, market, curator or network') },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                )
+              }
             }}
           />
         </Grid>
         <Grid size={{ xs: 6, md: 1.8 }}>
-          <Select fullWidth size="small" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
-            <MenuItem value="active">Active</MenuItem>
-            <MenuItem value="name">Name</MenuItem>
-            <MenuItem value="totalSupply">Total supply</MenuItem>
-            <MenuItem value="totalBorrowed">Total borrowed</MenuItem>
-            <MenuItem value="maxRoe">Max ROE</MenuItem>
+          <Select
+            fullWidth
+            size="small"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as SortMode)}
+            inputProps={{ 'aria-label': t('explore.sortLabel', 'Sort markets by') }}
+          >
+            <MenuItem value="active">{t('explore.sort.active', 'Active')}</MenuItem>
+            <MenuItem value="name">{t('common.name', 'Name')}</MenuItem>
+            <MenuItem value="totalSupply">{t('common.totalSupply', 'Total supply')}</MenuItem>
+            <MenuItem value="totalBorrowed">{t('common.totalBorrowed', 'Total borrowed')}</MenuItem>
+            <MenuItem value="maxRoe">{t('common.maxRoe', 'Max ROE')}</MenuItem>
           </Select>
         </Grid>
         <Grid size={{ xs: 6, md: 1.7 }}>
@@ -344,7 +369,8 @@ export default function ExplorePage() {
             renderTags={(value, getTagProps) =>
               value.map((option, index) => <Chip label={option} {...getTagProps({ index })} size="small" />)
             }
-            renderInput={(params) => <TextField {...params} label="Risk manager" />}
+            slotProps={{ popupIndicator: { 'aria-label': t('common.showRiskManagerOptions', 'Show risk manager options') } }}
+            renderInput={(params) => <TextField {...params} label={t('common.riskManager', 'Risk manager')} />}
           />
         </Grid>
         <Grid size={{ xs: 6, md: 2 }}>
@@ -357,37 +383,52 @@ export default function ExplorePage() {
             renderTags={(value, getTagProps) =>
               value.map((option, index) => <Chip label={option} {...getTagProps({ index })} size="small" />)
             }
-            renderInput={(params) => <TextField {...params} label="Asset" />}
+            slotProps={{ popupIndicator: { 'aria-label': t('common.showAssetOptions', 'Show asset options') } }}
+            renderInput={(params) => <TextField {...params} label={t('common.asset', 'Asset')} />}
           />
         </Grid>
       </Grid>
 
       {loading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', padding: 6 }}>
-          <CircularProgress />
+        <Box role="status" aria-live="polite" sx={{ display: 'flex', justifyContent: 'center', padding: 6 }}>
+          <CircularProgress aria-label={t('explore.loading', 'Loading markets')} />
         </Box>
       )}
 
       {failedChains.length > 0 && (
         <Alert severity="warning" variant="outlined" sx={{ marginBottom: 2 }}>
-          Some network data could not be loaded: {failedChains.join('; ')}.{cards.length > 0 ? ' Showing available markets.' : ''}
+          {t('explore.loadFailed', 'Some network data could not be loaded: {chains}.', { chains: failedChains.join('; ') })}
+          {cards.length > 0 ? ` ${t('explore.showingAvailable', 'Showing available markets.')}` : ''}
         </Alert>
       )}
 
       {!loading && visibleCards.length === 0 && (
-        <Paper sx={{ padding: 3 }}>
-          <Typography>{cards.length === 0 ? 'No markets are currently available.' : 'No markets match the current filters.'}</Typography>
+        <Paper role="status" sx={{ padding: 3 }}>
+          <Typography>
+            {cards.length === 0
+              ? t('explore.emptyNone', 'No markets are currently available.')
+              : t('explore.emptyFiltered', 'No markets match the current filters.')}
+          </Typography>
         </Paper>
       )}
 
-      <Stack spacing={2}>
+      <Stack
+        component="ul"
+        spacing={2}
+        aria-label={t('explore.listLabel', 'Markets')}
+        aria-busy={loading}
+        sx={{ listStyle: 'none', margin: 0, padding: 0 }}
+      >
         {visibleCards.map((card) => {
           const id = expansionId(card.chainId, card.slug);
+          const detailsId = `explore-market-${card.chainId}-${card.slug}`;
+          const expanded = expandedSlugs.has(id);
           const resolved = resolvedSummaries[id];
           return (
             <Paper
               key={id}
-              ref={(element: HTMLDivElement | null) => {
+              component="li"
+              ref={(element: HTMLLIElement | null) => {
                 if (element && pendingScrollId.current === id) {
                   pendingScrollId.current = null;
                   element.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -400,16 +441,31 @@ export default function ExplorePage() {
                 '&:hover': { borderColor: theme.palette.secondary.main }
               }}
             >
+              {/* Disclosure: the whole summary row toggles the market's graph/matrix detail. */}
               <Box
                 onClick={() => toggleExpanded(card.chainId, card.slug)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleExpanded(card.chainId, card.slug);
+                  }
+                }}
                 sx={{ cursor: 'pointer' }}
                 role="button"
-                aria-expanded={expandedSlugs.has(id)}
+                tabIndex={0}
+                aria-expanded={expanded}
+                aria-controls={expanded ? detailsId : undefined}
+                aria-label={t('explore.card.toggle', '{market} market on {network} by {curator} — show lending and borrowing options', {
+                  market: card.name,
+                  network: card.chainLabel,
+                  curator: card.entityNames.join(' & ') || t('common.unknownRiskManager', 'unknown risk manager')
+                })}
               >
                 {/* Top: entity, name, description | assets/pairs */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, marginBottom: 2.5 }}>
                   <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', minWidth: 0 }}>
-                    <Avatar src={card.entityLogo} sx={{ width: 44, height: 44, fontSize: 16 }}>
+                    {/* The risk-manager name is rendered as text below, so the logo is decorative. */}
+                    <Avatar src={card.entityLogo} alt="" aria-hidden="true" sx={{ width: 44, height: 44, fontSize: 16 }}>
                       {(card.entityNames[0] || card.name).slice(0, 1)}
                     </Avatar>
                     <Box sx={{ minWidth: 0 }}>
@@ -419,7 +475,7 @@ export default function ExplorePage() {
                         </Typography>
                         <ChainBadge chainId={card.chainId} />
                       </Stack>
-                      <Typography variant="h3" sx={{ margin: '2px 0' }}>
+                      <Typography variant="h3" component="h2" sx={{ margin: '2px 0' }}>
                         {card.name}
                       </Typography>
                       <Typography
@@ -439,14 +495,14 @@ export default function ExplorePage() {
                   <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flexShrink: 0 }}>
                     <Box sx={{ textAlign: 'right' }}>
                       <Typography variant="body2" sx={{ color: theme.palette.grey[400] }}>
-                        {resolved?.assetCount ?? card.assetCount} assets
+                        {t('explore.card.assets', '{count} assets', { count: resolved?.assetCount ?? card.assetCount })}
                       </Typography>
                       <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                        {resolved?.pairCount ?? card.pairCount} pairs
+                        {t('explore.card.pairs', '{count} pairs', { count: resolved?.pairCount ?? card.pairCount })}
                       </Typography>
                       {(resolved?.unknownVaults ?? card.unknownVaults) > 0 && (
                         <Typography variant="body2" color="error">
-                          {resolved?.unknownVaults ?? card.unknownVaults} unknown
+                          {t('explore.card.unknown', '{count} unknown', { count: resolved?.unknownVaults ?? card.unknownVaults })}
                         </Typography>
                       )}
                     </Box>
@@ -454,7 +510,7 @@ export default function ExplorePage() {
                       sx={{
                         color: theme.palette.grey[500],
                         transition: 'transform 0.2s',
-                        transform: expandedSlugs.has(id) ? 'rotate(180deg)' : 'none'
+                        transform: expanded ? 'rotate(180deg)' : 'none'
                       }}
                     />
                   </Box>
@@ -464,40 +520,49 @@ export default function ExplorePage() {
                 <Grid container spacing={2} alignItems="center">
                   <Grid size={{ xs: 6, sm: 3, md: 2.5 }}>
                     <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                      Total supply
+                      {t('common.totalSupply', 'Total supply')}
                     </Typography>
-                    <Typography variant="h4">${formatShortUSDS(resolved?.totalSupplyUsd ?? card.totalSupplyUsd)}</Typography>
+                    <Typography variant="h4" component="p">
+                      ${formatShortUSDS(resolved?.totalSupplyUsd ?? card.totalSupplyUsd)}
+                    </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3, md: 2.5 }}>
                     <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                      Total borrowed
+                      {t('common.totalBorrowed', 'Total borrowed')}
                     </Typography>
-                    <Typography variant="h4">${formatShortUSDS(resolved?.totalBorrowedUsd ?? card.totalBorrowedUsd)}</Typography>
+                    <Typography variant="h4" component="p">
+                      ${formatShortUSDS(resolved?.totalBorrowedUsd ?? card.totalBorrowedUsd)}
+                    </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3, md: 2.5 }}>
                     <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                      Available liquidity
+                      {t('common.availableLiquidity', 'Available liquidity')}
                     </Typography>
-                    <Typography variant="h4">${formatShortUSDS(resolved?.availableLiquidityUsd ?? card.availableLiquidityUsd)}</Typography>
+                    <Typography variant="h4" component="p">
+                      ${formatShortUSDS(resolved?.availableLiquidityUsd ?? card.availableLiquidityUsd)}
+                    </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, sm: 3, md: 2.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                        Max ROE
+                        {t('common.maxRoe', 'Max ROE')}
                       </Typography>
-                      <Tooltip title="Estimated max return on equity for a leveraged loop at the pair's borrow LTV" arrow>
+                      <Tooltip
+                        title={t('explore.maxRoeHint', 'Estimated max return on equity for a leveraged loop at the pair borrow LTV')}
+                        arrow
+                      >
                         <InfoOutlinedIcon sx={{ fontSize: 14, color: theme.palette.grey[600] }} />
                       </Tooltip>
                     </Box>
                     {card.maxRoe !== null ? (
-                      <Typography variant="h4">
+                      <Typography variant="h4" component="p">
                         {card.maxRoe.toFixed(2)}%{' '}
                         <Typography component="span" variant="body2" sx={{ color: theme.palette.grey[500] }}>
                           {card.maxRoePair}
                         </Typography>
                       </Typography>
                     ) : (
-                      <Typography variant="h4" sx={{ color: theme.palette.grey[600] }}>
+                      <Typography variant="h4" component="p" sx={{ color: theme.palette.grey[600] }}>
                         —
                       </Typography>
                     )}
@@ -506,6 +571,10 @@ export default function ExplorePage() {
                     <Box sx={{ display: 'flex', justifyContent: { md: 'flex-end', xs: 'flex-start' } }}>
                       <AvatarGroup
                         max={8}
+                        role="group"
+                        aria-label={t('explore.card.assetsList', 'Assets in this market: {assets}', {
+                          assets: card.assets.map((a) => a.symbol).join(', ')
+                        })}
                         sx={{ '& .MuiAvatar-root': { width: 26, height: 26, fontSize: 10, border: `1px solid ${theme.palette.divider}` } }}
                       >
                         {card.assets.map((a) => (
@@ -520,8 +589,13 @@ export default function ExplorePage() {
                   </Grid>
                 </Grid>
               </Box>
-              {expandedSlugs.has(id) && (
-                <Box sx={{ marginTop: 2.5, paddingTop: 2.5, borderTop: `1px solid ${theme.palette.divider}` }}>
+              {expanded && (
+                <Box
+                  id={detailsId}
+                  role="group"
+                  aria-label={t('explore.card.detailsLabel', '{market} lending and borrowing options', { market: card.name })}
+                  sx={{ marginTop: 2.5, paddingTop: 2.5, borderTop: `1px solid ${theme.palette.divider}` }}
+                >
                   <ExploreMarketExperience
                     chainId={card.chainId}
                     marketId={card.slug}

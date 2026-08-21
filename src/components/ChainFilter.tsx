@@ -4,6 +4,7 @@ import { Box, FormControl, FormControlProps, InputLabel, MenuItem, Select, Selec
 
 import { getRuntimeConfig } from '@/appconfig/runtime';
 import { ChainIcon } from 'components/ChainIcon';
+import useTranslate from 'hooks/useTranslate';
 
 export type ChainFilterValue = 'all' | number;
 
@@ -14,6 +15,7 @@ interface ChainFilterProps extends Omit<FormControlProps, 'onChange'> {
 
 export default function ChainFilter({ value, onChange, fullWidth = true, ...formControlProps }: ChainFilterProps) {
   const labelId = useId();
+  const t = useTranslate();
   const { chains } = getRuntimeConfig();
 
   const handleChange = (event: SelectChangeEvent<ChainFilterValue>) => {
@@ -23,17 +25,17 @@ export default function ChainFilter({ value, onChange, fullWidth = true, ...form
 
   return (
     <FormControl fullWidth={fullWidth} size="small" {...formControlProps}>
-      <InputLabel id={labelId}>Network</InputLabel>
+      <InputLabel id={labelId}>{t('common.network', 'Network')}</InputLabel>
       <Select<ChainFilterValue>
         labelId={labelId}
-        label="Network"
+        label={t('common.network', 'Network')}
         value={value}
         onChange={handleChange}
         renderValue={(selected) =>
           selected === 'all' ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <PublicOutlinedIcon sx={{ fontSize: 18 }} />
-              All networks
+              {t('common.allNetworks', 'All networks')}
             </Box>
           ) : (
             <ChainIcon chainId={selected} showName size={18} tooltip={false} />
@@ -43,7 +45,7 @@ export default function ChainFilter({ value, onChange, fullWidth = true, ...form
         <MenuItem value="all">
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
             <PublicOutlinedIcon sx={{ fontSize: 18 }} />
-            All networks
+            {t('common.allNetworks', 'All networks')}
           </Box>
         </MenuItem>
         {chains.map((chain) => (

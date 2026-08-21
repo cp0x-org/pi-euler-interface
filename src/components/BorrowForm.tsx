@@ -8,6 +8,7 @@ import { useAccount, usePublicClient, useReadContracts, useSwitchChain, useWrite
 import { ERC20_ABI } from '@/contracts/erc4626';
 import { EVAULT_ABI, EVC_ABI } from '@/contracts/evk';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import { V3VaultDetail } from 'types/euler';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
 import { dispatchError, dispatchSuccess } from 'utils/snackbar';
@@ -61,6 +62,7 @@ export default function BorrowForm({
   onSuccess
 }: BorrowFormProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const { address, chainId: connectedChainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
@@ -139,11 +141,11 @@ export default function BorrowForm({
     healthFactor >= 2 ? theme.palette.success.main : healthFactor >= 1.25 ? theme.palette.warning.main : theme.palette.error.main;
 
   const wait = async (txHash: Address) => {
-    if (!publicClient) throw new Error('RPC client is not available');
+    if (!publicClient) throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
     setHash(txHash);
     setStep('confirming');
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-    if (receipt.status !== 'success') throw new Error('Transaction reverted');
+    if (receipt.status !== 'success') throw new Error(t('form.txReverted', 'Transaction reverted'));
   };
 
   const submit = async () => {
@@ -151,7 +153,7 @@ export default function BorrowForm({
     if (wrongNetwork) return switchChainAsync({ chainId });
     if (!publicClient || !canSubmit || busy) return;
     if (!evc) {
-      setMessage('Could not resolve the vault connector (EVC). Try again in a moment.');
+      setMessage(t('borrowForm.evcUnresolved', 'Could not resolve the vault connector (EVC). Try again in a moment.'));
       setFailed(true);
       return;
     }
@@ -182,8 +184,12 @@ export default function BorrowForm({
         });
         await wait(await writeContractAsync(approval.request));
         setStep('idle');
-        setMessage(`Approval confirmed. Submit again to borrow ${liabilityVault.asset.symbol}.`);
-        dispatchSuccess(`${collateralAsset.symbol} approval confirmed`);
+        setMessage(
+          t('borrowForm.approvalConfirmedRetry', 'Approval confirmed. Submit again to borrow {symbol}.', {
+            symbol: liabilityVault.asset.symbol
+          })
+        );
+        dispatchSuccess(t('form.approvalConfirmed', '{symbol} approval confirmed', { symbol: collateralAsset.symbol }));
         await reads.refetch();
         return;
       }
@@ -230,14 +236,15 @@ export default function BorrowForm({
         args: [items]
       });
       await wait(await writeContractAsync(batch.request));
-      setMessage(`Borrowed ${borrowInput} ${liabilityVault.asset.symbol}.`);
-      dispatchSuccess('Borrow transaction confirmed');
+      setMessage(t('borrowForm.borrowed', 'Borrowed {amount} {symbol}.', { amount: borrowInput, symbol: liabilityVault.asset.symbol }));
+      dispatchSuccess(t('borrowForm.txConfirmed', 'Borrow transaction confirmed'));
       setCollateralInput('');
       setBorrowInput('');
       await reads.refetch();
       onSuccess();
     } catch (error) {
-      const text = error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : 'Transaction failed';
+      const text =
+        error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : t('form.txFailed', 'Transaction failed');
       setMessage(text);
       setFailed(true);
       dispatchError(text);
@@ -249,26 +256,26 @@ export default function BorrowForm({
   const buttonLabel = busy
     ? (
         {
-          resetting: 'Resetting allowance...',
-          approving: `Approving ${collateralAsset.symbol}...`,
-          borrowing: `Borrowing ${liabilityVault.asset.symbol}...`,
-          confirming: 'Confirming transaction...',
+          resetting: t('form.resettingAllowance', 'Resetting allowance...'),
+          approving: t('form.approvingSymbol', 'Approving {symbol}...', { symbol: collateralAsset.symbol }),
+          borrowing: t('borrowForm.borrowingSymbol', 'Borrowing {symbol}...', { symbol: liabilityVault.asset.symbol }),
+          confirming: t('form.confirmingTx', 'Confirming transaction...'),
           idle: ''
         } as Record<Step, string>
       )[step]
     : !address
-      ? 'Connect wallet'
+      ? t('wallet.connectShort', 'Connect wallet')
       : wrongNetwork
-        ? 'Switch network'
+        ? t('wallet.switchNetwork', 'Switch network')
         : needsApprove
-          ? `Approve ${collateralAsset.symbol}`
-          : `Borrow ${liabilityVault.asset.symbol}`;
+          ? t('form.approveSymbol', 'Approve {symbol}', { symbol: collateralAsset.symbol })
+          : t('borrowForm.borrowSymbol', 'Borrow {symbol}', { symbol: liabilityVault.asset.symbol });
 
   return (
     <Stack spacing={2}>
       {!borrowOnly && (
         <AmountField
-          label="Deposit collateral"
+          label={t('borrowForm.depositCollateral', 'Deposit collateral')}
           symbol={collateralAsset.symbol}
           logoUrl={collateralLogoUrl}
           value={collateralInput}
@@ -280,7 +287,7 @@ export default function BorrowForm({
         />
       )}
       <AmountField
-        label="Borrow"
+        label={t('common.borrow', 'Borrow')}
         symbol={liabilityVault.asset.symbol}
         logoUrl={borrowLogoUrl}
         value={borrowInput}
@@ -288,38 +295,63 @@ export default function BorrowForm({
         usd={borrowNum * borrowPriceUsd}
         disabled={busy}
         helper={
-          additionalCapacityUsd > 0 ? `Max ~$${additionalCapacityUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : undefined
+          additionalCapacityUsd > 0
+            ? t('borrowForm.maxApprox', 'Max ~${amount}', {
+                amount: additionalCapacityUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })
+              })
+            : undefined
         }
       />
 
       <Box sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, padding: 2 }}>
         <Stack spacing={1.25}>
-          <PreviewRow label="Loan-to-value" value={`${(positionLtv * 100).toFixed(2)}%`} />
+          <PreviewRow label={t('common.loanToValue', 'Loan-to-value')} value={`${(positionLtv * 100).toFixed(2)}%`} />
           <PreviewRow
-            label="Health factor"
+            label={t('common.healthFactor', 'Health factor')}
             value={Number.isFinite(healthFactor) ? healthFactor.toFixed(2) : '∞'}
             valueColor={healthColor}
           />
-          <PreviewRow label="Borrow APY" value={`${liabilityVault.borrowApy.toFixed(2)}%`} valueColor={theme.palette.warning.main} />
           <PreviewRow
-            label={`${collateralAsset.symbol} liquidation price`}
+            label={t('common.borrowApy', 'Borrow APY')}
+            value={`${liabilityVault.borrowApy.toFixed(2)}%`}
+            valueColor={theme.palette.warning.main}
+          />
+          <PreviewRow
+            label={t('common.liquidationPrice', '{symbol} liquidation price', { symbol: collateralAsset.symbol })}
             value={liqPrice > 0 ? `$${liqPrice.toLocaleString('en-US', { maximumFractionDigits: 4 })}` : '—'}
           />
           {currentDebt > 0n && (
             <PreviewRow
-              label="Current debt"
+              label={t('common.currentDebt', 'Current debt')}
               value={`${rawText(currentDebt, liabilityVault.asset.decimals)} ${liabilityVault.asset.symbol}`}
             />
           )}
         </Stack>
       </Box>
 
-      {exceedsBalance && <Alert severity="warning">Deposit exceeds your {collateralAsset.symbol} balance.</Alert>}
-      {overLtv && <Alert severity="warning">Borrow amount exceeds the {(borrowLtv * 100).toFixed(0)}% max LTV for this collateral.</Alert>}
+      {exceedsBalance && (
+        <Alert severity="warning">
+          {t('borrowForm.exceedsCollateralBalance', 'Deposit exceeds your {symbol} balance.', { symbol: collateralAsset.symbol })}
+        </Alert>
+      )}
+      {overLtv && (
+        <Alert severity="warning">
+          {t('borrowForm.exceedsMaxLtv', 'Borrow amount exceeds the {ltv}% max LTV for this collateral.', {
+            ltv: (borrowLtv * 100).toFixed(0)
+          })}
+        </Alert>
+      )}
       {message && <Alert severity={failed ? 'error' : 'success'}>{message}</Alert>}
       {hash && chainId === 1 && (
-        <Link href={`https://etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
-          View transaction <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
+        <Link
+          href={`https://etherscan.io/tx/${hash}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('form.viewTxLabel', 'View transaction {hash} in the block explorer', {
+            hash: `${hash.slice(0, 6)}…${hash.slice(-4)}`
+          })}
+        >
+          {t('form.viewTx', 'View transaction')} <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
         </Link>
       )}
 
@@ -329,6 +361,7 @@ export default function BorrowForm({
         size="large"
         onClick={submit}
         disabled={busy || (Boolean(address) && !wrongNetwork && !canSubmit)}
+        aria-busy={busy}
         sx={{ minHeight: 48, fontWeight: 600 }}
       >
         {busy && <CircularProgress size={18} color="inherit" sx={{ marginRight: 1 }} />}
@@ -371,6 +404,7 @@ function AmountField({
   onMax?: () => void;
 }) {
   const theme = useTheme();
+  const t = useTranslate();
   return (
     <Paper variant="outlined" sx={{ padding: 2, borderRadius: 1, borderColor: theme.palette.divider }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -390,7 +424,7 @@ function AmountField({
           onChange={(event) => onChange(event.target.value)}
           placeholder="0.00"
           disabled={disabled}
-          inputProps={{ inputMode: 'decimal', 'aria-label': `${label} amount` }}
+          inputProps={{ inputMode: 'decimal', 'aria-label': t('form.fieldAmountLabel', '{label} amount in {symbol}', { label, symbol }) }}
           sx={{ '& input': { fontSize: 28, fontWeight: 500, padding: 0 } }}
         />
         <TokenIcon symbol={symbol} logoUrl={logoUrl} avatarProps={{ sx: { width: 24, height: 24, fontSize: 9 } }} />
@@ -404,8 +438,13 @@ function AmountField({
           <Typography variant="body2" color="text.secondary">
             {balanceText}
             {onMax && (
-              <Button size="small" onClick={onMax} disabled={disabled}>
-                Max
+              <Button
+                size="small"
+                onClick={onMax}
+                disabled={disabled}
+                aria-label={t('form.useMax', 'Use maximum available {symbol}', { symbol })}
+              >
+                {t('common.max', 'Max')}
               </Button>
             )}
           </Typography>

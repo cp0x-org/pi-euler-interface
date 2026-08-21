@@ -5,6 +5,7 @@ import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 
 import { tokenImageUrl } from '@/api/euler';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import { formatShortUSDS, shortenAddress } from 'utils/formatters';
 
 import { getMatrixHeatmapRange, getPairMetric, type CollateralMatrix, type MatrixViewId } from './calculations';
@@ -75,13 +76,15 @@ const capUsage = (current: unknown, cap: unknown) => {
   return (Number(currentValue) / Number(capValue)) * 100;
 };
 
-const hookedOperations = (rawVault: unknown) => {
+type Translate = ReturnType<typeof useTranslate>;
+
+const hookedOperations = (rawVault: unknown, t: Translate) => {
   const operations = record(record(rawVault).hooks).hookedOperations;
   const active = Object.entries(record(operations))
     .filter(([, enabled]) => enabled)
     .map(([operation]) => operation);
-  if (!active.length) return 'None';
-  if (active.length > 7) return 'All';
+  if (!active.length) return t('common.none', 'None');
+  if (active.length > 7) return t('common.all', 'All');
   return active.map((operation) => operation.replace(/([A-Z])/g, ' $1').trim()).join(', ');
 };
 
@@ -171,7 +174,8 @@ const attributeLabels: Record<string, string> = {
 function attributeValue(
   id: string,
   vault: NormalizedVault,
-  rawVault: unknown
+  rawVault: unknown,
+  t: Translate
 ): { display: string; progress?: number | null; hint?: string } {
   const raw = record(rawVault);
   const caps = record(raw.caps);
@@ -193,7 +197,11 @@ function attributeValue(
       return { display: liquidityUsd ? `$${formatShortUSDS(liquidityUsd)}` : '—' };
     case 'exposure':
       return {
-        display: vault.collaterals.length ? `${vault.collaterals.length} asset${vault.collaterals.length === 1 ? '' : 's'}` : '—'
+        display: vault.collaterals.length
+          ? vault.collaterals.length === 1
+            ? t('discovery.assetCountOne', '{count} asset', { count: vault.collaterals.length })
+            : t('discovery.assetCountMany', '{count} assets', { count: vault.collaterals.length })
+          : '—'
       };
     case 'badDebt':
       return { display: '$0' };
@@ -224,9 +232,11 @@ function attributeValue(
         display: vault.collaterals.length ? displayPercent(numberValue(liquidation.maxLiquidationDiscount) * 100) : '—'
       };
     case 'badDebtSocialized':
-      return { display: vault.collaterals.length ? (liquidation.socializeDebt ? 'Yes' : 'No') : '—' };
+      return {
+        display: vault.collaterals.length ? (liquidation.socializeDebt ? t('common.yes', 'Yes') : t('common.no', 'No')) : '—'
+      };
     case 'hooks':
-      return { display: hookedOperations(rawVault) };
+      return { display: hookedOperations(rawVault, t) };
     case 'governor': {
       const governor = raw.governorAdmin ?? raw.governor;
       return { display: typeof governor === 'string' ? shortenAddress(governor) : '—', hint: String(governor ?? '') };
@@ -249,6 +259,7 @@ function AttributeMatrix({
   onSelectHeader
 }: DiscoveryMatrixProps & { view: 'stats' | 'config' }) {
   const theme = useTheme();
+  const t = useTranslate();
   const [hovered, setHovered] = useState<{ vault: string; attribute: string } | null>(null);
   const vaults = [...market.vaults, ...market.externalVaults].sort((a, b) => {
     const externalDifference = Number(market.externalVaults.includes(a)) - Number(market.externalVaults.includes(b));
@@ -279,9 +290,9 @@ function AttributeMatrix({
             <TableRow>
               <TableCell sx={{ position: 'sticky', left: 0, zIndex: 4, minWidth: 132, bgcolor: 'background.paper' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Attribute →
+                  {t('discovery.attributeAxis', 'Attribute →')}
                   <br />
-                  Vault ↓
+                  {t('discovery.vaultAxis', 'Vault ↓')}
                 </Typography>
               </TableCell>
               {attributes.map((attribute) => (
@@ -293,7 +304,7 @@ function AttributeMatrix({
                     bgcolor: hovered?.attribute === attribute ? alpha(theme.palette.common.white, 0.06) : 'background.paper'
                   }}
                 >
-                  {attributeLabels[attribute]}
+                  {t(`discovery.attribute.${attribute}`, attributeLabels[attribute])}
                 </TableCell>
               ))}
             </TableRow>
@@ -308,7 +319,7 @@ function AttributeMatrix({
                   <TableCell
                     role="button"
                     tabIndex={0}
-                    aria-label={`Select ${vault.asset.symbol} vault`}
+                    aria-label={t('discovery.selectVaultRow', 'Select {symbol} vault', { symbol: vault.asset.symbol })}
                     onClick={() => onSelectHeader({ address: vault.address, axis: 'row' })}
                     sx={{
                       position: 'sticky',
@@ -335,7 +346,7 @@ function AttributeMatrix({
                     </Box>
                   </TableCell>
                   {attributes.map((attribute) => {
-                    const value = attributeValue(attribute, vault, rawVaultByAddress.get(vault.address));
+                    const value = attributeValue(attribute, vault, rawVaultByAddress.get(vault.address), t);
                     const highlighted = rowHighlighted || hovered?.attribute === attribute;
                     return (
                       <TableCell
@@ -352,6 +363,7 @@ function AttributeMatrix({
                             </Typography>
                             {value.progress != null && (
                               <CircularProgress
+                                aria-hidden="true"
                                 size={16}
                                 thickness={5}
                                 variant="determinate"
@@ -371,7 +383,7 @@ function AttributeMatrix({
       </Box>
       {!selectedHeader && (
         <Typography variant="body2" sx={{ textAlign: 'center' }}>
-          Select a vault row to see lending/borrowing options below.
+          {t('discovery.selectRowHint', 'Select a vault row to see lending/borrowing options below.')}
         </Typography>
       )}
     </Box>
@@ -391,6 +403,7 @@ function PairMatrix({
   onSelectHeader
 }: DiscoveryMatrixProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const [hovered, setHovered] = useState<MatrixSelection | null>(null);
   const isCorrelated = (collateralAddress: string, liabilityAddress: string) => {
     const collateral = market.vaultByAddress.get(collateralAddress);
@@ -422,9 +435,9 @@ function PairMatrix({
             <TableRow>
               <TableCell sx={{ position: 'sticky', left: 0, zIndex: 4, minWidth: 132, bgcolor: 'background.paper' }}>
                 <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  Liability →
+                  {t('discovery.liabilityAxis', 'Liability →')}
                   <br />
-                  Collateral ↓
+                  {t('discovery.collateralAxis', 'Collateral ↓')}
                 </Typography>
               </TableCell>
               {matrix.columns.map((column) => {
@@ -438,7 +451,7 @@ function PairMatrix({
                     align="center"
                     role="button"
                     tabIndex={0}
-                    aria-label={`Select ${column.symbol} liability column`}
+                    aria-label={t('discovery.selectLiabilityColumn', 'Select {symbol} liability column', { symbol: column.symbol })}
                     onClick={() => onSelectHeader({ address: column.address, axis: 'column' })}
                     sx={{
                       minWidth: 68,
@@ -475,7 +488,7 @@ function PairMatrix({
                   <TableCell
                     role="button"
                     tabIndex={0}
-                    aria-label={`Select ${row.symbol} collateral row`}
+                    aria-label={t('discovery.selectCollateralRow', 'Select {symbol} collateral row', { symbol: row.symbol })}
                     onClick={() => onSelectHeader({ address: row.address, axis: 'row' })}
                     sx={{
                       position: 'sticky',
@@ -513,7 +526,7 @@ function PairMatrix({
                     const oracle = oracleAddress(rawLiability);
                     const oracleLabel = oracle
                       ? String(record(oracleMetadata?.[oracle]).name ?? shortenAddress(oracle))
-                      : 'Oracle metadata unavailable';
+                      : t('discovery.oracleUnavailable', 'Oracle metadata unavailable');
 
                     return (
                       <TableCell
@@ -523,9 +536,14 @@ function PairMatrix({
                         tabIndex={cell ? 0 : -1}
                         aria-label={
                           metric?.state === 'unavailable' && metric.reason === 'uncorrelated-pair'
-                            ? `${view === 'roe' ? 'Max ROE' : 'Max multiplier'} is unavailable for uncorrelated pairs`
+                            ? t('discovery.uncorrelatedCell', '{metric} is unavailable for uncorrelated pairs', {
+                                metric: view === 'roe' ? t('common.maxRoe', 'Max ROE') : t('common.maxMultiplier', 'Max multiplier')
+                              })
                             : cell
-                              ? `Select ${row.symbol} collateral and ${column.symbol} liability`
+                              ? t('discovery.selectPairCell', 'Select {collateral} collateral and {liability} liability', {
+                                  collateral: row.symbol,
+                                  liability: column.symbol
+                                })
                               : undefined
                         }
                         onMouseEnter={() => setHovered({ collateralAddress: row.address, liabilityAddress: column.address })}
@@ -573,7 +591,13 @@ function PairMatrix({
                             {formatMetric(metric.value, view)}
                           </Typography>
                         ) : cell ? (
-                          <Tooltip title={metric?.reason === 'uncorrelated-pair' ? 'Only available for correlated asset pairs.' : ''}>
+                          <Tooltip
+                            title={
+                              metric?.reason === 'uncorrelated-pair'
+                                ? t('discovery.correlatedPairsOnly', 'Only available for correlated asset pairs.')
+                                : ''
+                            }
+                          >
                             <Typography variant="caption" color="text.disabled">
                               —
                             </Typography>
@@ -590,7 +614,7 @@ function PairMatrix({
       </Box>
       {!selectedCell && !selectedHeader && (
         <Typography variant="body2" sx={{ textAlign: 'center' }}>
-          Select a cell, row, or column header to see lending/borrowing options below.
+          {t('discovery.selectCellHint', 'Select a cell, row, or column header to see lending/borrowing options below.')}
         </Typography>
       )}
     </Box>

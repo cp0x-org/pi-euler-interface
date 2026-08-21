@@ -14,6 +14,7 @@ import {
 import { Avatar, Chip, ChipProps, Tooltip, Typography } from '@mui/material';
 import Box, { BoxProps } from '@mui/material/Box';
 import React from 'react';
+import useTranslate from 'hooks/useTranslate';
 import { getChainName } from 'utils/chains';
 
 interface ChainIconProps extends BoxProps {
@@ -42,10 +43,12 @@ export const ChainIcon: React.FC<ChainIconProps> = ({ chainId, showName = false,
 
   const name = getChainName(chainId);
   const Logo = CHAIN_LOGOS[chainId as keyof typeof CHAIN_LOGOS];
+  // The network name always accompanies the mark (as `showName` text, a Chip label or a tooltip),
+  // so the mark itself stays out of the accessibility tree instead of repeating that name.
   const icon = Logo ? (
-    <Logo variant="background" size={size} aria-label={`${name} logo`} />
+    <Logo variant="background" size={size} aria-hidden="true" focusable="false" />
   ) : (
-    <Avatar alt={name} sx={{ width: size, height: size, fontSize: Math.max(size * 0.45, 9) }}>
+    <Avatar alt="" aria-hidden="true" sx={{ width: size, height: size, fontSize: Math.max(size * 0.45, 9) }}>
       {name.slice(0, 1).toUpperCase()}
     </Avatar>
   );
@@ -75,11 +78,13 @@ interface ChainBadgeProps extends Omit<ChipProps, 'icon' | 'label'> {
 }
 
 export function ChainBadge({ chainId, size = 'small', variant = 'outlined', sx, ...chipProps }: ChainBadgeProps) {
+  const t = useTranslate();
+
   return (
     <Chip
       icon={<ChainIcon chainId={chainId} size={18} tooltip={false} />}
       label={getChainName(chainId)}
-      aria-label={`Network: ${getChainName(chainId)}`}
+      aria-label={t('common.networkNamed', 'Network {network}', { network: getChainName(chainId) })}
       size={size}
       variant={variant}
       sx={{

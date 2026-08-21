@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { tokenImageUrl } from '@/api/euler';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import type { V3VaultDetail } from 'types/euler';
 
 import {
@@ -85,6 +86,7 @@ export default function ExploreMarketExperience({
   onResolvedSummary
 }: ExploreMarketExperienceProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const [mode, setMode] = useState<ViewMode>('graph');
   const [fullscreen, setFullscreen] = useState(false);
@@ -176,24 +178,26 @@ export default function ExploreMarketExperience({
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <CircularProgress size={16} />
             <Typography variant="body2" color="text.secondary">
-              Resolving external vault metadata…
+              {t('discovery.resolvingMetadata', 'Resolving external vault metadata…')}
             </Typography>
           </Box>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            No active collateral relationships are available for this market.
+            {t('discovery.noRelationships', 'No active collateral relationships are available for this market.')}
           </Typography>
         )}
         {fallbackQuery.isError && (
           <Typography variant="caption" color="text.disabled">
-            On-chain fallback unavailable: {(fallbackQuery.error as Error).message}
+            {t('discovery.fallbackUnavailable', 'On-chain fallback unavailable: {message}', {
+              message: (fallbackQuery.error as Error).message
+            })}
           </Typography>
         )}
         {market.vaults.map((vault) => (
           <ResultRow
             key={vault.address}
             chainId={chainId}
-            label={`Lend ${vault.asset.symbol}`}
+            label={t('discovery.lendSymbol', 'Lend {symbol}', { symbol: vault.asset.symbol })}
             vault={vault}
             onClick={() => navigate(`/lend/${vault.address}?network=${chainId}`)}
           />
@@ -230,6 +234,7 @@ export default function ExploreMarketExperience({
           size="small"
           value={mode}
           onChange={(_, next) => setViewMode(next)}
+          aria-label={t('discovery.viewMode', 'Discovery view')}
           sx={{
             '& .MuiToggleButton-root': {
               minHeight: 34,
@@ -246,11 +251,11 @@ export default function ExploreMarketExperience({
         >
           <ToggleButton value="graph">
             <HubOutlinedIcon sx={{ fontSize: 15, mr: 0.5 }} />
-            Graph
+            {t('discovery.graph', 'Graph')}
           </ToggleButton>
           <ToggleButton value="matrix">
             <GridViewOutlinedIcon sx={{ fontSize: 15, mr: 0.5 }} />
-            Matrix
+            {t('discovery.matrix', 'Matrix')}
           </ToggleButton>
         </ToggleButtonGroup>
 
@@ -259,27 +264,31 @@ export default function ExploreMarketExperience({
             size="small"
             value={matrixView}
             onChange={(event) => selectMatrixView(event.target.value as MatrixViewId)}
+            inputProps={{ 'aria-label': t('discovery.matrixMetric', 'Matrix metric') }}
             sx={{ minWidth: 150, height: 34, borderRadius: 99, '& .MuiSelect-select': { py: 0.75, fontSize: 13 } }}
           >
             {MATRIX_VIEW_OPTIONS.map((option) => (
               <MenuItem key={option.id} value={option.id}>
-                {option.label}
+                {t(`discovery.matrixView.${option.id}`, option.label)}
               </MenuItem>
             ))}
           </Select>
         )}
 
         {fallbackQuery.isFetching && (
-          <Tooltip title="Resolving external vault metadata on-chain">
-            <CircularProgress size={16} />
+          <Tooltip title={t('discovery.resolvingMetadataOnChain', 'Resolving external vault metadata on-chain')}>
+            <CircularProgress
+              size={16}
+              aria-label={t('discovery.resolvingMetadataOnChain', 'Resolving external vault metadata on-chain')}
+            />
           </Tooltip>
         )}
         {mode === 'matrix' && matrixView === 'oracle' && oracleQuery.isFetching && (
           <Typography variant="caption" color="text.disabled">
-            Loading oracle metadata…
+            {t('discovery.loadingOracle', 'Loading oracle metadata…')}
           </Typography>
         )}
-        <Tooltip title={fullscreen ? 'Exit expanded view' : 'Expand discovery view'}>
+        <Tooltip title={fullscreen ? t('discovery.exitExpanded', 'Exit expanded view') : t('discovery.expand', 'Expand discovery view')}>
           <IconButton
             size="small"
             sx={{ ml: 'auto' }}
@@ -291,7 +300,7 @@ export default function ExploreMarketExperience({
             {fullscreen ? <FullscreenExitOutlinedIcon fontSize="small" /> : <FullscreenOutlinedIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
-        <Tooltip title="Copy market link">
+        <Tooltip title={t('discovery.copyMarketLink', 'Copy market link')}>
           <IconButton
             size="small"
             onClick={() =>
@@ -305,7 +314,9 @@ export default function ExploreMarketExperience({
 
       {mode === 'matrix' && (matrixView === 'roe' || matrixView === 'multiplier') && (
         <Typography variant="caption" color="text.disabled" sx={{ display: 'block', textAlign: 'center', pb: 1 }}>
-          {matrixView === 'roe' ? 'Max ROE' : 'Max multiplier'} only shown for correlated pairs.
+          {t('discovery.correlatedOnly', '{metric} only shown for correlated pairs.', {
+            metric: matrixView === 'roe' ? t('common.maxRoe', 'Max ROE') : t('common.maxMultiplier', 'Max multiplier')
+          })}
         </Typography>
       )}
 
@@ -354,7 +365,7 @@ export default function ExploreMarketExperience({
 
       {fallbackQuery.isError && fallbackAddresses.length > 0 && (
         <Typography variant="caption" color="text.disabled" sx={{ display: 'block', textAlign: 'center', px: 2, pb: 1 }}>
-          Some external vault metadata is unavailable; showing V3 market data.
+          {t('discovery.metadataUnavailable', 'Some external vault metadata is unavailable; showing V3 market data.')}
         </Typography>
       )}
     </Box>
@@ -381,6 +392,7 @@ function SelectionResults({
   header: HeaderSelection | null;
 }) {
   const navigate = useNavigate();
+  const t = useTranslate();
   const selection: DiscoverySelection | null =
     mode === 'graph' && graphAddress
       ? { kind: 'graph', address: graphAddress }
@@ -407,10 +419,12 @@ function SelectionResults({
       >
         {mode === 'matrix' && matrixView === 'oracle' && cell && (
           <Box sx={{ mb: 1.5 }}>
-            <Typography variant="subtitle2">Oracle route</Typography>
+            <Typography variant="subtitle2">{t('discovery.oracleRoute', 'Oracle route')}</Typography>
             <Typography variant="caption" color="text.secondary">
-              {market.vaultByAddress.get(cell.collateralAddress)?.asset.symbol} collateral priced for{' '}
-              {market.vaultByAddress.get(cell.liabilityAddress)?.asset.symbol} liability.
+              {t('discovery.oracleRouteHint', '{collateral} collateral priced for {liability} liability.', {
+                collateral: market.vaultByAddress.get(cell.collateralAddress)?.asset.symbol ?? '',
+                liability: market.vaultByAddress.get(cell.liabilityAddress)?.asset.symbol ?? ''
+              })}
             </Typography>
           </Box>
         )}
@@ -418,11 +432,11 @@ function SelectionResults({
           {lendVault && (
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-                Lend
+                {t('nav.lend', 'Lend')}
               </Typography>
               <ResultRow
                 chainId={chainId}
-                label={`Lend ${lendVault.asset.symbol}`}
+                label={t('discovery.lendSymbol', 'Lend {symbol}', { symbol: lendVault.asset.symbol })}
                 vault={lendVault}
                 onClick={() => navigate(`/lend/${lendVault.address}?network=${chainId}`)}
               />
@@ -431,7 +445,7 @@ function SelectionResults({
           {borrowPairs.length > 0 && (
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-                Borrow
+                {t('common.borrow', 'Borrow')}
               </Typography>
               <Stack spacing={0.75}>
                 {borrowPairs.map((pair) => {
@@ -443,9 +457,12 @@ function SelectionResults({
                     <ResultRow
                       key={`${pair.collateralAddress}:${pair.liabilityAddress}`}
                       chainId={chainId}
-                      label={`Borrow ${liability.asset.symbol} against ${collateral.asset.symbol}`}
+                      label={t('discovery.borrowAgainst', 'Borrow {borrow} against {collateral}', {
+                        borrow: liability.asset.symbol,
+                        collateral: collateral.asset.symbol
+                      })}
                       vault={liability}
-                      trailing={edge ? `${(edge.borrowLtv * 100).toFixed(1)}% LTV` : undefined}
+                      trailing={edge ? t('discovery.ltvTrailing', '{value}% LTV', { value: (edge.borrowLtv * 100).toFixed(1) }) : undefined}
                       onClick={() => navigate(`/borrow/${pair.collateralAddress}/${pair.liabilityAddress}?network=${chainId}`)}
                     />
                   );
@@ -455,7 +472,7 @@ function SelectionResults({
           )}
           {lendVault && borrowPairs.length === 0 && (
             <Typography variant="caption" color="text.secondary">
-              This vault is used as collateral only and does not support borrowing.
+              {t('discovery.collateralOnly', 'This vault is used as collateral only and does not support borrowing.')}
             </Typography>
           )}
         </Stack>

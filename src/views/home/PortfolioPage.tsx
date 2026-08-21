@@ -14,6 +14,7 @@ import { ChainBadge } from 'components/ChainIcon';
 import ConnectButtonCustom from 'components/ConnectButtonCustom';
 import { TokenIcon } from 'components/TokenIcon';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
+import useTranslate from 'hooks/useTranslate';
 import { EulerBorrowPosition, EulerDepositPosition } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
 
@@ -45,6 +46,7 @@ function fixed1e18(value: string): number {
 
 export default function PortfolioPage() {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const copy = useCopyToClipboard();
   const { address } = useAccount();
@@ -70,9 +72,9 @@ export default function PortfolioPage() {
   if (!address)
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 360, textAlign: 'center', gap: 2 }}>
-        <Typography variant="h2">Your portfolio</Typography>
+        <Typography variant="h2">{t('portfolio.yourPortfolio', 'Your portfolio')}</Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 420 }}>
-          Connect your wallet to view your Euler borrow positions and deposits, and to manage them.
+          {t('portfolio.connectPrompt', 'Connect your wallet to view your Euler borrow positions and deposits, and to manage them.')}
         </Typography>
         <ConnectButtonCustom />
       </Box>
@@ -80,8 +82,8 @@ export default function PortfolioPage() {
 
   if (portfolioQueries.some((query) => query.isPending))
     return (
-      <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
-        <CircularProgress />
+      <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
+        <CircularProgress aria-label={t('portfolio.loading', 'Loading portfolio')} />
       </Box>
     );
 
@@ -113,16 +115,18 @@ export default function PortfolioPage() {
   const deposits: ChainedDepositPosition[] = successfulPortfolios.flatMap(({ chainId, portfolio }) =>
     (portfolio.savings ?? []).map((deposit) => ({ ...deposit, chainId }))
   );
-  const emptyScope = chainFilter === 'all' ? 'across all networks' : 'on this network';
+  const emptyScope =
+    chainFilter === 'all' ? t('portfolio.scope.allNetworks', 'across all networks') : t('portfolio.scope.thisNetwork', 'on this network');
 
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 2.5, flexWrap: 'wrap' }}>
-        <Typography variant="h2">Portfolio</Typography>
+        <Typography variant="h2">{t('portfolio.title', 'Portfolio')}</Typography>
         <Chip
           size="small"
           variant="outlined"
           label={shortAddress(address)}
+          aria-label={t('portfolio.copyAddress', 'Copy connected wallet address {address}', { address: shortAddress(address) })}
           onDelete={() => copy.copyToClipboard(address)}
           deleteIcon={<ContentCopyIcon sx={{ fontSize: 15 }} />}
         />
@@ -133,34 +137,41 @@ export default function PortfolioPage() {
 
       {failedQueryCount > 0 && (
         <Alert severity="warning" sx={{ marginBottom: 2 }}>
-          {failedQueryCount === 1 ? 'One network could not be loaded.' : `${failedQueryCount} networks could not be loaded.`}
+          {failedQueryCount === 1
+            ? t('portfolio.networkFailedOne', 'One network could not be loaded.')
+            : t('portfolio.networkFailedMany', '{count} networks could not be loaded.', { count: failedQueryCount })}
           {successfulPortfolios.length > 0
-            ? ' Showing portfolio data from the selected networks that responded.'
-            : ' No portfolio data is available for the selected network scope.'}
+            ? ` ${t('portfolio.showingResponded', 'Showing portfolio data from the selected networks that responded.')}`
+            : ` ${t('portfolio.noDataForScope', 'No portfolio data is available for the selected network scope.')}`}
         </Alert>
       )}
 
       {/* Summary */}
       <Grid container spacing={2} sx={{ marginBottom: 3 }}>
-        <SummaryStat label="Net worth" value={fmtUsd(totals.netAssetValueUsd)} />
-        <SummaryStat label="Supplied" value={fmtUsd(totals.suppliedValueUsd)} />
-        <SummaryStat label="Borrowed" value={fmtUsd(totals.borrowedValueUsd)} />
+        <SummaryStat label={t('portfolio.netWorth', 'Net worth')} value={fmtUsd(totals.netAssetValueUsd)} />
+        <SummaryStat label={t('portfolio.supplied', 'Supplied')} value={fmtUsd(totals.suppliedValueUsd)} />
+        <SummaryStat label={t('portfolio.borrowed', 'Borrowed')} value={fmtUsd(totals.borrowedValueUsd)} />
         <SummaryStat
-          label="Net APY"
+          label={t('common.netApy', 'Net APY')}
           value={`${aggregateNetApy.toFixed(2)}%`}
           valueColor={aggregateNetApy >= 0 ? theme.palette.success.main : theme.palette.error.main}
         />
       </Grid>
 
       <Paper sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, overflow: 'hidden' }}>
-        <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ borderBottom: `1px solid ${theme.palette.divider}`, px: 1 }}>
-          <Tab label={`Positions${borrows.length ? ` (${borrows.length})` : ''}`} />
-          <Tab label={`Deposits${deposits.length ? ` (${deposits.length})` : ''}`} />
+        <Tabs
+          value={tab}
+          onChange={(_, value) => setTab(value)}
+          aria-label={t('portfolio.tabsLabel', 'Portfolio sections')}
+          sx={{ borderBottom: `1px solid ${theme.palette.divider}`, px: 1 }}
+        >
+          <Tab label={`${t('portfolio.positions', 'Positions')}${borrows.length ? ` (${borrows.length})` : ''}`} />
+          <Tab label={`${t('portfolio.deposits', 'Deposits')}${deposits.length ? ` (${deposits.length})` : ''}`} />
         </Tabs>
         <Box sx={{ padding: { xs: 1.5, sm: 2.5 } }}>
           {tab === 0 ? (
             borrows.length === 0 ? (
-              <EmptyState text={`You have no open borrow positions ${emptyScope}.`} />
+              <EmptyState text={t('portfolio.emptyPositions', 'You have no open borrow positions {scope}.', { scope: emptyScope })} />
             ) : (
               <Stack spacing={1.5}>
                 {borrows.map((position) => (
@@ -178,7 +189,7 @@ export default function PortfolioPage() {
               </Stack>
             )
           ) : deposits.length === 0 ? (
-            <EmptyState text={`You have no deposits ${emptyScope}.`} />
+            <EmptyState text={t('portfolio.emptyDeposits', 'You have no deposits {scope}.', { scope: emptyScope })} />
           ) : (
             <Stack spacing={1.5}>
               {deposits.map((deposit) => (
@@ -229,6 +240,7 @@ function PositionRow({
   onManage: () => void;
 }) {
   const theme = useTheme();
+  const t = useTranslate();
   const collateral = position.collateralVault;
   const borrow = position.borrowVault;
   const hf = fixed1e18(position.healthFactor);
@@ -266,7 +278,7 @@ function PositionRow({
                 {collateral.asset.symbol} → {borrow.asset.symbol}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Borrow position
+                {t('portfolio.borrowPosition', 'Borrow position')}
               </Typography>
               <ChainBadge
                 chainId={position.chainId}
@@ -275,14 +287,18 @@ function PositionRow({
             </Box>
           </Box>
         </Grid>
-        <Metric label="Net value" value={fmtUsd(netValue)} />
-        <Metric label="Debt" value={fmtUsd(position.liabilityValueUsd ?? 0)} />
-        <Metric label="Health" value={Number.isFinite(hf) && hf > 0 ? hf.toFixed(2) : '∞'} valueColor={healthColor(hf)} />
+        <Metric label={t('portfolio.netValue', 'Net value')} value={fmtUsd(netValue)} />
+        <Metric label={t('common.debt', 'Debt')} value={fmtUsd(position.liabilityValueUsd ?? 0)} />
         <Metric
-          label="Net APY"
+          label={t('common.health', 'Health')}
+          value={Number.isFinite(hf) && hf > 0 ? hf.toFixed(2) : '∞'}
+          valueColor={healthColor(hf)}
+        />
+        <Metric
+          label={t('common.netApy', 'Net APY')}
           value={`${(position.netApy ?? 0).toFixed(2)}%`}
           valueColor={(position.netApy ?? 0) >= 0 ? theme.palette.success.main : theme.palette.error.main}
-          extra={`LTV ${ltv.toFixed(1)}%`}
+          extra={t('common.ltvValue', 'LTV {value}%', { value: ltv.toFixed(1) })}
         />
         <Grid size={{ xs: 12, md: 1 }} sx={{ textAlign: { md: 'right' } }}>
           <Button
@@ -293,8 +309,12 @@ function PositionRow({
               event.stopPropagation();
               onManage();
             }}
+            aria-label={t('portfolio.managePosition', 'Manage {collateral} to {borrow} borrow position', {
+              collateral: collateral.asset.symbol,
+              borrow: borrow.asset.symbol
+            })}
           >
-            Manage
+            {t('portfolio.manage', 'Manage')}
           </Button>
         </Grid>
       </Grid>
@@ -304,6 +324,7 @@ function PositionRow({
 
 function DepositRow({ deposit, onSupply, onWithdraw }: { deposit: ChainedDepositPosition; onSupply: () => void; onWithdraw: () => void }) {
   const theme = useTheme();
+  const t = useTranslate();
   const isEarn = deposit.vault.type === 'EulerEarn';
   const assets = rawAmount(deposit.assets, deposit.vault.asset.decimals);
   return (
@@ -321,7 +342,12 @@ function DepositRow({ deposit, onSupply, onWithdraw }: { deposit: ChainedDeposit
                 <Typography variant="h5" noWrap>
                   {deposit.vault.shares.symbol}
                 </Typography>
-                <Chip label={isEarn ? 'Earn' : 'Lend'} size="small" color={isEarn ? 'secondary' : 'default'} variant="outlined" />
+                <Chip
+                  label={isEarn ? t('nav.earn', 'Earn') : t('nav.lend', 'Lend')}
+                  size="small"
+                  color={isEarn ? 'secondary' : 'default'}
+                  variant="outlined"
+                />
               </Box>
               <Typography variant="caption" color="text.secondary">
                 {deposit.vault.asset.symbol}
@@ -334,18 +360,36 @@ function DepositRow({ deposit, onSupply, onWithdraw }: { deposit: ChainedDeposit
           </Box>
         </Grid>
         <Metric
-          label="Balance"
+          label={t('common.balance', 'Balance')}
           value={fmtUsd(deposit.suppliedValueUsd ?? 0)}
           extra={`${assets.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${deposit.vault.asset.symbol}`}
         />
-        <Metric label="APY" value={`${(deposit.apy ?? 0).toFixed(2)}%`} valueColor={theme.palette.success.main} />
+        <Metric label={t('common.apy', 'APY')} value={`${(deposit.apy ?? 0).toFixed(2)}%`} valueColor={theme.palette.success.main} />
         <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { md: 'right' } }}>
           <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
-            <Button size="small" variant="contained" color="secondary" onClick={onSupply}>
-              Supply
+            <Button
+              size="small"
+              variant="contained"
+              color="secondary"
+              onClick={onSupply}
+              aria-label={t('portfolio.supplyTo', 'Supply {symbol} to {vault}', {
+                symbol: deposit.vault.asset.symbol,
+                vault: deposit.vault.shares.symbol
+              })}
+            >
+              {t('common.supply', 'Supply')}
             </Button>
-            <Button size="small" variant="outlined" color="secondary" onClick={onWithdraw}>
-              Withdraw
+            <Button
+              size="small"
+              variant="outlined"
+              color="secondary"
+              onClick={onWithdraw}
+              aria-label={t('portfolio.withdrawFrom', 'Withdraw {symbol} from {vault}', {
+                symbol: deposit.vault.asset.symbol,
+                vault: deposit.vault.shares.symbol
+              })}
+            >
+              {t('common.withdraw', 'Withdraw')}
             </Button>
           </Stack>
         </Grid>

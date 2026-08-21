@@ -85,14 +85,27 @@ export const fetchEntities = async (chainId: number) => {
 };
 
 // GET {labelsBaseUrl}/{chainId}/earn-vaults.json
+// The file is a set of vault addresses, but nothing upstream enforces that: a repeated (or
+// differently-cased) address would be requested twice, come back twice from the batch endpoint and
+// render as two Earn cards sharing one React key. Collapse duplicates here, keeping the first
+// entry's metadata, so every consumer sees one label per vault.
 export const fetchEarnVaultLabels = async (chainId: number): Promise<EulerEarnVaultLabel[]> => {
   const raw = await getLabelsJson<unknown[]>(`/${chainId}/earn-vaults.json`, []);
 
-  return raw.flatMap((entry) => {
-    if (typeof entry === 'string') return [{ address: entry }];
-    if (!entry || typeof entry !== 'object' || typeof (entry as EulerEarnVaultLabel).address !== 'string') return [];
-    return [entry as EulerEarnVaultLabel];
-  });
+  const labels = new Map<string, EulerEarnVaultLabel>();
+  for (const entry of raw) {
+    const label =
+      typeof entry === 'string'
+        ? { address: entry }
+        : entry && typeof entry === 'object' && typeof (entry as EulerEarnVaultLabel).address === 'string'
+          ? (entry as EulerEarnVaultLabel)
+          : undefined;
+    if (!label) continue;
+    const key = label.address.toLowerCase();
+    if (!labels.has(key)) labels.set(key, label);
+  }
+
+  return Array.from(labels.values());
 };
 
 // GET /api/internal/vaults?chainId=N — the snapshot the Euler app itself uses; kept for
