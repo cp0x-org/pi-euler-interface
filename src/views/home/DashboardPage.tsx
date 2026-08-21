@@ -8,9 +8,11 @@ import { formatUnits } from 'viem';
 import { TokenIcon } from 'components/TokenIcon';
 import { getChainName } from 'utils/chains';
 import { mockChainPositions } from 'mocks/positions';
+import useTranslate from 'hooks/useTranslate';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const t = useTranslate();
 
   // Mock data: user positions grouped by chain (see src/mocks/positions.ts)
   const chainsWithData = mockChainPositions;
@@ -19,7 +21,7 @@ export default function DashboardPage() {
     <Box sx={{ width: '100%' }}>
       {chainsWithData.length === 0 && (
         <Box sx={{ padding: 2 }}>
-          <Typography variant="h4">No positions found across any network.</Typography>
+          <Typography variant="h4">{t('dashboard.empty', 'No positions found across any network.')}</Typography>
         </Box>
       )}
 
@@ -32,17 +34,17 @@ export default function DashboardPage() {
           {vaultPositions.length > 0 && (
             <Box sx={{ marginBottom: 3 }}>
               <Typography variant="h4" gutterBottom sx={{ marginBottom: 1, color: 'text.secondary' }}>
-                Vaults
+                {t('dashboard.vaults', 'Vaults')}
               </Typography>
               <TableContainer component={Paper} sx={{ marginBottom: 2 }}>
-                <Table sx={{ minWidth: 650 }} aria-label="vaults table">
+                <Table sx={{ minWidth: 650 }} aria-label={t('dashboard.vaultsTable', 'Vaults table')}>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Vault</TableCell>
-                      <TableCell>Balance</TableCell>
-                      <TableCell>APY</TableCell>
-                      <TableCell>Total Deposits (USD)</TableCell>
-                      <TableCell>Curators</TableCell>
+                      <TableCell>{t('common.vault', 'Vault')}</TableCell>
+                      <TableCell>{t('common.balance', 'Balance')}</TableCell>
+                      <TableCell>{t('common.apy', 'APY')}</TableCell>
+                      <TableCell>{t('dashboard.totalDeposits', 'Total Deposits (USD)')}</TableCell>
+                      <TableCell>{t('dashboard.curators', 'Curators')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -85,16 +87,16 @@ export default function DashboardPage() {
           {marketPositions.length > 0 && (
             <Box>
               <Typography variant="h4" gutterBottom sx={{ marginBottom: 1, color: 'text.secondary' }}>
-                Markets
+                {t('dashboard.markets', 'Markets')}
               </Typography>
               <TableContainer component={Paper}>
-                <Table sx={{ minWidth: 650 }} aria-label="markets table">
+                <Table sx={{ minWidth: 650 }} aria-label={t('dashboard.marketsTable', 'Markets table')}>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Market</TableCell>
-                      <TableCell>Collateral</TableCell>
-                      <TableCell>Loan</TableCell>
-                      <TableCell>Borrow APY</TableCell>
+                      <TableCell>{t('common.market', 'Market')}</TableCell>
+                      <TableCell>{t('common.collateral', 'Collateral')}</TableCell>
+                      <TableCell>{t('common.loan', 'Loan')}</TableCell>
+                      <TableCell>{t('common.borrowApy', 'Borrow APY')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

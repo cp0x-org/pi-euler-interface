@@ -2,6 +2,7 @@ import { useId } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
 
 import { tokenImageUrl } from '@/api/euler';
+import useTranslate from 'hooks/useTranslate';
 
 import { getArrow, getEnlargedDiagram, getGraphConnectedAddresses, getLabelPosition, type GraphDiagram } from './calculations';
 
@@ -14,6 +15,7 @@ interface DiscoveryGraphProps {
 
 export function DiscoveryGraph({ chainId, diagram, selectedAddress, onSelect }: DiscoveryGraphProps) {
   const theme = useTheme();
+  const t = useTranslate();
   // Several graphs can be mounted at once and share vault addresses, so clip
   // ids must be unique per instance to avoid cross-graph url(#...) collisions.
   const instanceId = useId().replace(/[^a-zA-Z0-9]/g, '');
@@ -34,7 +36,7 @@ export function DiscoveryGraph({ chainId, diagram, selectedAddress, onSelect }: 
           viewBox={`0 0 ${enlarged.viewWidth} ${enlarged.viewHeight}`}
           width={Math.min(enlarged.viewWidth * 1.5, 900)}
           style={{ height: 'auto', maxWidth: '100%', overflow: 'visible' }}
-          aria-label={`${diagram.assetCount} asset relationship graph`}
+          aria-label={t('discovery.graphLabel', 'Relationship graph of {count} assets', { count: diagram.assetCount })}
         >
           {enlarged.edges.map((edge) => {
             const highlighted = isEdgeHighlighted(edge.from.address, edge.to.address);
@@ -87,7 +89,7 @@ export function DiscoveryGraph({ chainId, diagram, selectedAddress, onSelect }: 
                 key={node.address}
                 role="button"
                 tabIndex={0}
-                aria-label={`Select ${node.assetSymbol}`}
+                aria-label={t('discovery.selectAsset', 'Select {symbol}', { symbol: node.assetSymbol })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelect(node.address);
@@ -149,7 +151,7 @@ export function DiscoveryGraph({ chainId, diagram, selectedAddress, onSelect }: 
       </Box>
       {!selectedAddress && (
         <Typography variant="body2" sx={{ textAlign: 'center', px: 2, pb: 1.5 }}>
-          Select a node to highlight connections and see lending/borrowing options below.
+          {t('discovery.selectNodeHint', 'Select a node to highlight connections and see lending/borrowing options below.')}
         </Typography>
       )}
     </>

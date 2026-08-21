@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { MarketInterface } from 'types/market';
 import { TabPanel, WithdrawTab, SupplyTab } from './components';
 import { useTheme } from '@mui/material/styles';
+import useTranslate from 'hooks/useTranslate';
 
 interface MarketProps {
   market?: MarketInterface;
@@ -15,6 +16,7 @@ interface MarketProps {
 
 export default function ActionFormsSecondary(props: MarketProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const marketId = props.marketId;
   const market = props.market;
   const [tabValue, setTabValue] = useState(0);
@@ -29,7 +31,7 @@ export default function ActionFormsSecondary(props: MarketProps) {
     return (
       <Box sx={{ padding: 2 }}>
         <Typography variant="h5" color="error">
-          Market not found
+          {t('market.notFound', 'Market not found')}
         </Typography>
       </Box>
     );
@@ -50,8 +52,8 @@ export default function ActionFormsSecondary(props: MarketProps) {
             }
           }}
         >
-          <Tab label="Supply" />
-          <Tab label="Withdraw" />
+          <Tab label={t('common.supply', 'Supply')} />
+          <Tab label={t('common.withdraw', 'Withdraw')} />
         </Tabs>
       </Box>
 

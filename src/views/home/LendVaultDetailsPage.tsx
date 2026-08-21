@@ -29,6 +29,7 @@ import { useNetworkParam } from 'hooks/useNetworkParam';
 import { TokenIcon } from 'components/TokenIcon';
 import VaultActionForm from 'components/VaultActionForm';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
+import useTranslate from 'hooks/useTranslate';
 import { EulerEntity, EulerProduct } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
 
@@ -52,6 +53,7 @@ function entityForProduct(product: EulerProduct | undefined, entities: Record<st
 
 export default function LendVaultDetailsPage() {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const { lendAddress = '' } = useParams<{ lendAddress: string }>();
   const [params] = useSearchParams();
@@ -82,21 +84,21 @@ export default function LendVaultDetailsPage() {
   if (!valid)
     return (
       <Paper sx={{ padding: 3 }}>
-        <Typography color="error">Invalid Lend vault address.</Typography>
+        <Typography color="error">{t('lendDetail.invalidAddress', 'Invalid Lend vault address.')}</Typography>
       </Paper>
     );
   if (vaultQuery.isLoading)
     return (
-      <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
-        <CircularProgress />
+      <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
+        <CircularProgress aria-label={t('lendDetail.loading', 'Loading lending market')} />
       </Box>
     );
   if (vaultQuery.error || !vault)
     return (
       <Paper sx={{ padding: 3 }}>
-        <Typography color="error">Failed to load Lend market.</Typography>
+        <Typography color="error">{t('lendDetail.loadFailed', 'Failed to load Lend market.')}</Typography>
         <Button sx={{ marginTop: 2 }} onClick={() => navigate(`/lend?network=${chainId}`)} startIcon={<ArrowBackIcon />}>
-          Back to Lend
+          {t('lendDetail.back', 'Back to Lend')}
         </Button>
       </Paper>
     );
@@ -104,7 +106,7 @@ export default function LendVaultDetailsPage() {
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, marginBottom: 2.5 }}>
-        <IconButton onClick={() => navigate(`/lend?network=${chainId}`)} aria-label="Back to Lend">
+        <IconButton onClick={() => navigate(`/lend?network=${chainId}`)} aria-label={t('lendDetail.back', 'Back to Lend')}>
           <ArrowBackIcon />
         </IconButton>
         <TokenIcon
@@ -115,7 +117,11 @@ export default function LendVaultDetailsPage() {
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography color="text.secondary" noWrap>
             {vault.name}
-            <IconButton size="small" onClick={() => copy.copyToClipboard(vault.address)} aria-label="Copy vault address">
+            <IconButton
+              size="small"
+              onClick={() => copy.copyToClipboard(vault.address)}
+              aria-label={t('common.copyVaultAddress', 'Copy vault address')}
+            >
               <ContentCopyIcon sx={{ fontSize: 16 }} />
             </IconButton>
           </Typography>
@@ -127,7 +133,7 @@ export default function LendVaultDetailsPage() {
           <Stack spacing={2}>
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                Overview
+                {t('common.overview', 'Overview')}
               </Typography>
               {product?.description && (
                 <Typography color="text.secondary" sx={{ marginBottom: 2 }}>
@@ -136,44 +142,46 @@ export default function LendVaultDetailsPage() {
               )}
               <Grid container spacing={3}>
                 <Grid size={{ xs: 6 }}>
-                  <Typography color="text.secondary">Price</Typography>
+                  <Typography color="text.secondary">{t('common.price', 'Price')}</Typography>
                   <Typography variant="h4">${price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
-                  <Typography color="text.secondary">Vault type</Typography>
-                  <Chip icon={<OpenInNewIcon />} label="Governed" variant="outlined" size="small" />
+                  <Typography color="text.secondary">{t('common.vaultType', 'Vault type')}</Typography>
+                  <Chip icon={<OpenInNewIcon />} label={t('lendDetail.governed', 'Governed')} variant="outlined" size="small" />
                 </Grid>
                 <Grid size={{ xs: 6 }}>
-                  <Typography color="text.secondary">Market</Typography>
+                  <Typography color="text.secondary">{t('common.market', 'Market')}</Typography>
                   <Typography variant="h4">{product?.name ?? vault.name}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
-                  <Typography color="text.secondary">Risk manager</Typography>
+                  <Typography color="text.secondary">{t('common.riskManager', 'Risk manager')}</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Box component="img" src={entityLogoUrl(riskManager?.logo)} sx={{ width: 24, height: 24 }} />
+                    <Box component="img" src={entityLogoUrl(riskManager?.logo)} alt="" aria-hidden="true" sx={{ width: 24, height: 24 }} />
                     <Typography variant="h4">{riskManager?.name ?? '-'}</Typography>
                   </Box>
                 </Grid>
               </Grid>
               <Typography color="text.secondary" sx={{ marginTop: 2 }}>
-                Can be borrowed
+                {t('lendDetail.canBeBorrowed', 'Can be borrowed')}
               </Typography>
               <Typography>
-                {(vault.collaterals?.length ?? 0) > 0 ? `Yes in ${vault.collaterals?.length} markets` : 'No collateral markets'}
+                {(vault.collaterals?.length ?? 0) > 0
+                  ? t('lendDetail.yesInMarkets', 'Yes in {count} markets', { count: vault.collaterals?.length ?? 0 })
+                  : t('lendDetail.noCollateralMarkets', 'No collateral markets')}
               </Typography>
             </Paper>
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                Statistics
+                {t('common.statistics', 'Statistics')}
               </Typography>
               <Stack spacing={2}>
-                <Stat label="Total supply" value={formatUsd(vault.totalSupplyUsd)} />
-                <Stat label="Total borrowed" value={formatUsd(vault.totalBorrowsUsd)} />
-                <Stat label="Pending bad debt" value="$0" />
-                <Stat label="Available liquidity" value={formatUsd(liquidity)} />
-                <Stat label="Supply APY" value={`${vault.supplyApy.toFixed(2)}%`} />
-                <Stat label="Borrow APY" value={`${vault.borrowApy.toFixed(2)}%`} />
-                <Stat label="Utilization" value={`${(vault.utilization * 100).toFixed(2)}%`} />
+                <Stat label={t('common.totalSupply', 'Total supply')} value={formatUsd(vault.totalSupplyUsd)} />
+                <Stat label={t('common.totalBorrowed', 'Total borrowed')} value={formatUsd(vault.totalBorrowsUsd)} />
+                <Stat label={t('common.pendingBadDebt', 'Pending bad debt')} value="$0" />
+                <Stat label={t('common.availableLiquidity', 'Available liquidity')} value={formatUsd(liquidity)} />
+                <Stat label={t('common.supplyApy', 'Supply APY')} value={`${vault.supplyApy.toFixed(2)}%`} />
+                <Stat label={t('common.borrowApy', 'Borrow APY')} value={`${vault.borrowApy.toFixed(2)}%`} />
+                <Stat label={t('common.utilization', 'Utilization')} value={`${(vault.utilization * 100).toFixed(2)}%`} />
               </Stack>
             </Paper>
             <Accordion
@@ -181,7 +189,7 @@ export default function LendVaultDetailsPage() {
               sx={{ border: '1px solid', borderColor: 'divider', boxShadow: 'none', '&:before': { display: 'none' } }}
             >
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="h3">Collateral markets</Typography>
+                <Typography variant="h3">{t('lendDetail.collateralMarkets', 'Collateral markets')}</Typography>
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={1.5}>
@@ -198,8 +206,10 @@ export default function LendVaultDetailsPage() {
                     >
                       <Typography>{collateral.collateralName || collateral.collateralSymbol}</Typography>
                       <Typography color="text.secondary">
-                        Borrow LTV {(Number(collateral.borrowLTV) / 100).toFixed(2)}% · Liquidation{' '}
-                        {(Number(collateral.liquidationLTV) / 100).toFixed(2)}%
+                        {t('lendDetail.ltvSummary', 'Borrow LTV {borrow}% · Liquidation {liquidation}%', {
+                          borrow: (Number(collateral.borrowLTV) / 100).toFixed(2),
+                          liquidation: (Number(collateral.liquidationLTV) / 100).toFixed(2)
+                        })}
                       </Typography>
                     </Box>
                   ))}
@@ -208,9 +218,9 @@ export default function LendVaultDetailsPage() {
             </Accordion>
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                Addresses
+                {t('common.addresses', 'Addresses')}
               </Typography>
-              <Stat label="Vault" value={addressLabel(vault.address)} />
+              <Stat label={t('common.vault', 'Vault')} value={addressLabel(vault.address)} />
               <Stat label={vault.asset.symbol} value={addressLabel(vault.asset.address)} />
             </Paper>
           </Stack>
@@ -221,10 +231,11 @@ export default function LendVaultDetailsPage() {
               value={actionTab}
               onChange={(_, value) => setActionTab(value)}
               variant="fullWidth"
+              aria-label={t('lendDetail.actionsLabel', 'Lending vault actions')}
               sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}
             >
-              <Tab label="Supply" />
-              <Tab label="Withdraw" />
+              <Tab label={t('common.supply', 'Supply')} />
+              <Tab label={t('common.withdraw', 'Withdraw')} />
             </Tabs>
             <Box sx={{ padding: 2.5 }}>
               <VaultActionForm

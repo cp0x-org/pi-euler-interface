@@ -43,6 +43,7 @@ import { ERC20_ABI, ERC4626_ABI } from '@/contracts/erc4626';
 import BorrowForm from 'components/BorrowForm';
 import { TokenIcon } from 'components/TokenIcon';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
+import useTranslate from 'hooks/useTranslate';
 import { EulerEntity, EulerProduct, V3Collateral } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
 
@@ -104,6 +105,7 @@ async function resolveCollateralAsset(
 
 export default function BorrowDetailPage() {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const copy = useCopyToClipboard();
   const { address: account } = useAccount();
@@ -141,7 +143,10 @@ export default function BorrowDetailPage() {
 
   const collateralAssetAddress = collateralConfig?.asset || collateralVault?.asset.address || resolvedCollateralQuery.data?.address;
   const collateralSymbol =
-    collateralConfig?.assetSymbol || collateralVault?.asset.symbol || resolvedCollateralQuery.data?.symbol || 'Collateral';
+    collateralConfig?.assetSymbol ||
+    collateralVault?.asset.symbol ||
+    resolvedCollateralQuery.data?.symbol ||
+    t('common.collateral', 'Collateral');
   const collateralDecimals = collateralConfig?.assetDecimals || collateralVault?.asset.decimals || resolvedCollateralQuery.data?.decimals;
 
   const pricesQuery = useQuery({
@@ -193,24 +198,26 @@ export default function BorrowDetailPage() {
   if (!valid)
     return (
       <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-        <Typography color="error">Invalid borrow market address pair.</Typography>
+        <Typography color="error">{t('borrowDetail.invalidPair', 'Invalid borrow market address pair.')}</Typography>
         <Button sx={{ marginTop: 2 }} startIcon={<ArrowBackIcon />} onClick={() => navigate(`/borrow?network=${chainId}`)}>
-          Back to Borrow
+          {t('borrowDetail.back', 'Back to Borrow')}
         </Button>
       </Paper>
     );
   if (vaultsQuery.isLoading)
     return (
-      <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
-        <CircularProgress />
+      <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
+        <CircularProgress aria-label={t('borrowDetail.loading', 'Loading borrow market')} />
       </Box>
     );
   if (vaultsQuery.error || !borrowVault || !collateralConfig)
     return (
       <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-        <Typography color="error">This collateral is not accepted by the selected borrow market.</Typography>
+        <Typography color="error">
+          {t('borrowDetail.collateralNotAccepted', 'This collateral is not accepted by the selected borrow market.')}
+        </Typography>
         <Button sx={{ marginTop: 2 }} startIcon={<ArrowBackIcon />} onClick={() => navigate(`/borrow?network=${chainId}`)}>
-          Back to Borrow
+          {t('borrowDetail.back', 'Back to Borrow')}
         </Button>
       </Paper>
     );
@@ -221,7 +228,7 @@ export default function BorrowDetailPage() {
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, marginBottom: 2.5 }}>
-        <IconButton onClick={() => navigate(`/borrow?network=${chainId}`)} aria-label="Back to Borrow">
+        <IconButton onClick={() => navigate(`/borrow?network=${chainId}`)} aria-label={t('borrowDetail.back', 'Back to Borrow')}>
           <ArrowBackIcon />
         </IconButton>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -242,7 +249,11 @@ export default function BorrowDetailPage() {
             {collateralSymbol} → {borrowVault.asset.symbol}
           </Typography>
           <Typography variant="body2" sx={{ color: theme.palette.grey[500] }} noWrap>
-            {product?.name ?? borrowVault.name} · Borrow {borrowVault.asset.symbol} against {collateralSymbol}
+            {t('borrowDetail.subtitle', '{market} · Borrow {borrow} against {collateral}', {
+              market: product?.name ?? borrowVault.name,
+              borrow: borrowVault.asset.symbol,
+              collateral: collateralSymbol
+            })}
           </Typography>
         </Box>
       </Box>
@@ -253,7 +264,7 @@ export default function BorrowDetailPage() {
           <Stack spacing={2}>
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                Overview
+                {t('common.overview', 'Overview')}
               </Typography>
               {product?.description && (
                 <Typography color="text.secondary" sx={{ marginBottom: 2 }}>
@@ -261,14 +272,20 @@ export default function BorrowDetailPage() {
                 </Typography>
               )}
               <Grid container spacing={2.5}>
-                <Overview label="Market">{product?.name ?? borrowVault.name}</Overview>
-                <Overview label="Risk manager">
+                <Overview label={t('common.market', 'Market')}>{product?.name ?? borrowVault.name}</Overview>
+                <Overview label={t('common.riskManager', 'Risk manager')}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Box component="img" src={entityLogoUrl(riskManager?.logo)} sx={{ width: 22, height: 22, borderRadius: '50%' }} />
+                    <Box
+                      component="img"
+                      src={entityLogoUrl(riskManager?.logo)}
+                      alt=""
+                      aria-hidden="true"
+                      sx={{ width: 22, height: 22, borderRadius: '50%' }}
+                    />
                     <Typography variant="h4">{riskManager?.name ?? '-'}</Typography>
                   </Box>
                 </Overview>
-                <Overview label="Collateral">
+                <Overview label={t('common.collateral', 'Collateral')}>
                   {collateralSymbol}
                   {collateralPrice > 0 && (
                     <Typography component="span" variant="body2" sx={{ color: theme.palette.grey[500], ml: 0.75 }}>
@@ -276,7 +293,7 @@ export default function BorrowDetailPage() {
                     </Typography>
                   )}
                 </Overview>
-                <Overview label="Borrow">
+                <Overview label={t('common.borrow', 'Borrow')}>
                   {borrowVault.asset.symbol}
                   {borrowPrice > 0 && (
                     <Typography component="span" variant="body2" sx={{ color: theme.palette.grey[500], ml: 0.75 }}>
@@ -289,39 +306,46 @@ export default function BorrowDetailPage() {
 
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                Market parameters
+                {t('common.marketParameters', 'Market parameters')}
               </Typography>
               <Stack spacing={1.5}>
-                <Row label="Borrow APY" value={`${borrowApy.toFixed(2)}%`} valueColor={theme.palette.warning.main} />
-                <Row label={`${collateralSymbol} supply APY`} value={`${collateralSupplyApy.toFixed(2)}%`} />
                 <Row
-                  label="Max LTV"
-                  hint="Highest loan-to-value you can borrow to against this collateral"
+                  label={t('common.borrowApy', 'Borrow APY')}
+                  value={`${borrowApy.toFixed(2)}%`}
+                  valueColor={theme.palette.warning.main}
+                />
+                <Row
+                  label={t('common.collateralSupplyApy', '{symbol} supply APY', { symbol: collateralSymbol })}
+                  value={`${collateralSupplyApy.toFixed(2)}%`}
+                />
+                <Row
+                  label={t('common.maxLtv', 'Max LTV')}
+                  hint={t('common.maxLtvHint', 'Highest loan-to-value you can borrow to against this collateral')}
                   value={`${(borrowLtv * 100).toFixed(2)}%`}
                 />
                 <Row
-                  label="Liquidation LTV"
-                  hint="LTV at which the position becomes eligible for liquidation"
+                  label={t('common.liquidationLtv', 'Liquidation LTV')}
+                  hint={t('common.liquidationLtvHint', 'LTV at which the position becomes eligible for liquidation')}
                   value={`${(liquidationLtv * 100).toFixed(2)}%`}
                 />
                 <Row
-                  label="Max multiplier"
-                  hint="Maximum leverage = 1 / (1 − Max LTV)"
+                  label={t('common.maxMultiplier', 'Max multiplier')}
+                  hint={t('borrowDetail.maxMultiplierHint', 'Maximum leverage = 1 / (1 − Max LTV)')}
                   value={Number.isFinite(maxMultiplier) ? `${maxMultiplier.toFixed(2)}×` : '—'}
                 />
-                <Row label="Total borrowed" value={fmtUsd(borrowVault.totalBorrowsUsd || 0)} />
-                <Row label="Available liquidity" value={fmtUsd(availableLiquidityUsd)} />
-                <Row label="Utilization" value={`${((borrowVault.utilization || 0) * 100).toFixed(2)}%`} />
+                <Row label={t('common.totalBorrowed', 'Total borrowed')} value={fmtUsd(borrowVault.totalBorrowsUsd || 0)} />
+                <Row label={t('common.availableLiquidity', 'Available liquidity')} value={fmtUsd(availableLiquidityUsd)} />
+                <Row label={t('common.utilization', 'Utilization')} value={`${((borrowVault.utilization || 0) * 100).toFixed(2)}%`} />
               </Stack>
             </Paper>
 
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                Addresses
+                {t('common.addresses', 'Addresses')}
               </Typography>
               <Stack spacing={1.25}>
-                <AddressRow label="Collateral vault" address={collateral} onCopy={copy.copyToClipboard} />
-                <AddressRow label="Borrow vault" address={liability} onCopy={copy.copyToClipboard} />
+                <AddressRow label={t('common.collateralVault', 'Collateral vault')} address={collateral} onCopy={copy.copyToClipboard} />
+                <AddressRow label={t('common.borrowVault', 'Borrow vault')} address={liability} onCopy={copy.copyToClipboard} />
                 {collateralAssetAddress && (
                   <AddressRow label={collateralSymbol} address={collateralAssetAddress} onCopy={copy.copyToClipboard} />
                 )}
@@ -338,10 +362,11 @@ export default function BorrowDetailPage() {
               value={activeTab}
               onChange={(_, value) => setTab(value)}
               variant="fullWidth"
+              aria-label={t('borrowDetail.actionsLabel', 'Borrow market actions')}
               sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}
             >
-              <Tab label="Borrow" />
-              {SHOW_MULTIPLY && <Tab label="Multiply" />}
+              <Tab label={t('common.borrow', 'Borrow')} />
+              {SHOW_MULTIPLY && <Tab label={t('borrowDetail.multiply', 'Multiply')} />}
             </Tabs>
 
             <Box sx={{ padding: 2.5 }}>
@@ -361,14 +386,14 @@ export default function BorrowDetailPage() {
                     onSuccess={() => void vaultsQuery.refetch()}
                   />
                 ) : (
-                  <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 180 }}>
-                    <CircularProgress />
+                  <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 180 }}>
+                    <CircularProgress aria-label={t('borrowDetail.loadingCollateral', 'Loading collateral details')} />
                   </Box>
                 )
               ) : (
                 <Stack spacing={2}>
                   <AmountField
-                    label="Your collateral"
+                    label={t('borrowDetail.yourCollateral', 'Your collateral')}
                     symbol={collateralSymbol}
                     logoUrl={collateralAssetAddress ? tokenImageUrl(chainId, collateralAssetAddress) : ''}
                     value={multiplyCollateral}
@@ -378,7 +403,7 @@ export default function BorrowDetailPage() {
                   <Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                       <Typography variant="body2" color="text.secondary">
-                        Multiplier
+                        {t('borrowDetail.multiplier', 'Multiplier')}
                       </Typography>
                       <Typography variant="h4" sx={{ color: theme.palette.secondary.main }}>
                         {leverage.toFixed(2)}×
@@ -390,6 +415,7 @@ export default function BorrowDetailPage() {
                       max={Math.max(1.1, Number(maxMultiplier.toFixed(2)))}
                       step={0.05}
                       onChange={(_, value) => setLeverage(value as number)}
+                      aria-label={t('borrowDetail.multiplierSlider', 'Leverage multiplier')}
                       color="secondary"
                     />
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -397,35 +423,54 @@ export default function BorrowDetailPage() {
                         1×
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Max {Number.isFinite(maxMultiplier) ? maxMultiplier.toFixed(2) : '—'}×
+                        {t('borrowDetail.maxMultiplierValue', 'Max {value}×', {
+                          value: Number.isFinite(maxMultiplier) ? maxMultiplier.toFixed(2) : '—'
+                        })}
                       </Typography>
                     </Box>
                   </Box>
                   <PreviewBox>
-                    <Row label={`${collateralSymbol} exposure`} value={fmtUsd(exposureUsd)} />
-                    <Row label={`${borrowVault.asset.symbol} debt`} value={fmtUsd(multiplyDebtUsd)} />
                     <Row
-                      label="Est. ROE"
-                      hint="Leveraged return on equity = m·collateral APY − (m−1)·borrow APY"
+                      label={t('borrowDetail.exposure', '{symbol} exposure', { symbol: collateralSymbol })}
+                      value={fmtUsd(exposureUsd)}
+                    />
+                    <Row
+                      label={t('borrowDetail.debtOf', '{symbol} debt', { symbol: borrowVault.asset.symbol })}
+                      value={fmtUsd(multiplyDebtUsd)}
+                    />
+                    <Row
+                      label={t('borrowDetail.estRoe', 'Est. ROE')}
+                      hint={t('borrowDetail.estRoeHint', 'Leveraged return on equity = m·collateral APY − (m−1)·borrow APY')}
                       value={`${roe.toFixed(2)}%`}
                       valueColor={roe >= 0 ? theme.palette.success.main : theme.palette.error.main}
                     />
-                    <Row label="Loan-to-value" value={`${(multiplyLtv * 100).toFixed(2)}%`} />
+                    <Row label={t('common.loanToValue', 'Loan-to-value')} value={`${(multiplyLtv * 100).toFixed(2)}%`} />
                     <Row
-                      label="Health factor"
+                      label={t('common.healthFactor', 'Health factor')}
                       value={Number.isFinite(multiplyHealth) ? multiplyHealth.toFixed(2) : '∞'}
                       valueColor={healthColor(multiplyHealth)}
                     />
-                    <Row label="Liquidation buffer" value={`-${(liqDrop * 100).toFixed(1)}% ${collateralSymbol}`} />
+                    <Row
+                      label={t('borrowDetail.liquidationBuffer', 'Liquidation buffer')}
+                      value={`-${(liqDrop * 100).toFixed(1)}% ${collateralSymbol}`}
+                    />
                   </PreviewBox>
-                  <ActionButton account={account} label="Open multiply position" onConnect={openConnectModal} />
+                  <ActionButton
+                    account={account}
+                    label={t('borrowDetail.openMultiply', 'Open multiply position')}
+                    connectLabel={t('wallet.connectShort', 'Connect wallet')}
+                    pendingLabel={t('borrowDetail.executionPending', 'Execution wiring in progress')}
+                    onConnect={openConnectModal}
+                  />
                 </Stack>
               )}
 
               {activeTab === 1 && (
                 <Alert severity="info" icon={<InfoOutlinedIcon />} sx={{ marginTop: 2 }}>
-                  Live preview. Swap-routed leverage execution (via the Euler swap service) is being wired next — the Borrow tab already
-                  opens positions on-chain.
+                  {t(
+                    'borrowDetail.multiplyNotice',
+                    'Live preview. Swap-routed leverage execution (via the Euler swap service) is being wired next — the Borrow tab already opens positions on-chain.'
+                  )}
                 </Alert>
               )}
             </Box>
@@ -467,12 +512,18 @@ function Row({ label, value, hint, valueColor }: { label: string; value: string;
 }
 
 function AddressRow({ label, address, onCopy }: { label: string; address: string; onCopy: (text: string) => void }) {
+  const t = useTranslate();
+
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
       <Typography color="text.secondary">{label}</Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <Typography>{shortAddress(address)}</Typography>
-        <IconButton size="small" onClick={() => onCopy(address)} aria-label={`Copy ${label} address`}>
+        <IconButton
+          size="small"
+          onClick={() => onCopy(address)}
+          aria-label={t('common.copyLabelAddress', 'Copy {label} address', { label })}
+        >
           <ContentCopyIcon sx={{ fontSize: 15 }} />
         </IconButton>
       </Box>
@@ -507,6 +558,7 @@ function AmountField({
   helper?: string;
 }) {
   const theme = useTheme();
+  const t = useTranslate();
   return (
     <Paper variant="outlined" sx={{ padding: 2, borderRadius: 1, borderColor: theme.palette.divider }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -525,7 +577,7 @@ function AmountField({
           value={value}
           onChange={(event) => onChange(sanitizeAmount(event.target.value))}
           placeholder="0.00"
-          inputProps={{ inputMode: 'decimal', 'aria-label': `${label} amount` }}
+          inputProps={{ inputMode: 'decimal', 'aria-label': t('form.fieldAmountLabel', '{label} amount in {symbol}', { label, symbol }) }}
           sx={{ '& input': { fontSize: 28, fontWeight: 500, padding: 0 } }}
         />
         <TokenIcon symbol={symbol} logoUrl={logoUrl} avatarProps={{ sx: { width: 24, height: 24, fontSize: 9 } }} />
@@ -541,18 +593,22 @@ function AmountField({
 function ActionButton({
   account,
   label,
+  connectLabel,
+  pendingLabel,
   onConnect,
   disabled
 }: {
   account?: string;
   label: string;
+  connectLabel: string;
+  pendingLabel: string;
   onConnect?: () => void;
   disabled?: boolean;
 }) {
   if (!account)
     return (
       <Button variant="contained" color="secondary" size="large" onClick={() => onConnect?.()} sx={{ minHeight: 48, fontWeight: 600 }}>
-        Connect wallet
+        {connectLabel}
       </Button>
     );
   return (
@@ -561,7 +617,7 @@ function ActionButton({
         {label}
       </Button>
       <LinearProgress sx={{ marginTop: 1, borderRadius: 1, opacity: 0.35 }} />
-      <Chip label="Execution wiring in progress" size="small" variant="outlined" sx={{ marginTop: 1 }} />
+      <Chip label={pendingLabel} size="small" variant="outlined" sx={{ marginTop: 1 }} />
     </Box>
   );
 }

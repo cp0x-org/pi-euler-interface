@@ -47,6 +47,7 @@ import { useNetworkParam } from 'hooks/useNetworkParam';
 import { CopyableAddress } from 'components/CopyableAddress';
 import { TokenIcon } from 'components/TokenIcon';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
+import useTranslate from 'hooks/useTranslate';
 import { EulerEarnTotalsPoint, EulerEarnVault, EulerEntity, V3VaultDetail } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
 import DepositTab from 'views/home/vault/Deposit';
@@ -86,11 +87,12 @@ function formatFee(raw: string | undefined): string {
   }
 }
 
-function formatDuration(seconds: number | undefined): string {
-  if (!seconds) return 'None';
+function formatDuration(seconds: number | undefined, t: ReturnType<typeof useTranslate>): string {
+  if (!seconds) return t('common.none', 'None');
   const days = seconds / 86_400;
-  if (Number.isInteger(days)) return `${days} ${days === 1 ? 'day' : 'days'}`;
-  return `${Math.round(seconds / 3_600)} hours`;
+  if (Number.isInteger(days))
+    return days === 1 ? t('vaultDetail.oneDay', '{count} day', { count: days }) : t('vaultDetail.days', '{count} days', { count: days });
+  return t('vaultDetail.hours', '{count} hours', { count: Math.round(seconds / 3_600) });
 }
 
 function findCurator(vault: EulerEarnVault, entities: Record<string, EulerEntity>): EulerEntity | undefined {
@@ -108,13 +110,14 @@ function findCurator(vault: EulerEarnVault, entities: Record<string, EulerEntity
 
 function PerformanceChart({ points, metric, range, assetSymbol, assetDecimals }: PerformanceChartProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const visible = points.slice(-range);
   const values = visible.map((point) => (metric === 'totalSupply' ? rawAmount(point.totalAssets, assetDecimals) : (point.apy ?? 0)));
 
   if (visible.length < 2) {
     return (
       <Box sx={{ height: 240, display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
-        Historical data is not available for this range.
+        {t('vaultDetail.noHistory', 'Historical data is not available for this range.')}
       </Box>
     );
   }
@@ -143,7 +146,11 @@ function PerformanceChart({ points, metric, range, assetSymbol, assetDecimals }:
         component="svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${metric} history`}
+        aria-label={
+          metric === 'totalSupply'
+            ? t('vaultDetail.chartSupplyHistory', 'Total supply history')
+            : t('vaultDetail.chartApyHistory', 'APY history')
+        }
         sx={{ width: '100%', height: '100%' }}
       >
         {gridValues.map((value) => {
@@ -188,6 +195,7 @@ function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function AddressRow({ label, address, chainId }: { label: string; address?: string; chainId: number }) {
+  const t = useTranslate();
   if (!address) return null;
   const explorer = chainId === 1 ? `https://etherscan.io/address/${address}` : undefined;
   return (
@@ -197,7 +205,7 @@ function AddressRow({ label, address, chainId }: { label: string; address?: stri
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
           <CopyableAddress address={address} />
           {explorer && (
-            <Tooltip title="Open in explorer">
+            <Tooltip title={t('common.openInExplorer', 'Open in explorer')}>
               <IconButton component={Link} href={explorer} target="_blank" rel="noreferrer" size="small">
                 <OpenInNewIcon sx={{ fontSize: 16 }} />
               </IconButton>
@@ -220,6 +228,7 @@ const accordionSx = {
 
 export default function VaultDetailsPage() {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const { vaultAddress = '' } = useParams<{ vaultAddress: string }>();
   const [searchParams] = useSearchParams();
@@ -286,15 +295,15 @@ export default function VaultDetailsPage() {
   if (!addressValid) {
     return (
       <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-        <Typography color="error">Invalid Earn vault address.</Typography>
+        <Typography color="error">{t('vaultDetail.invalidAddress', 'Invalid Earn vault address.')}</Typography>
       </Paper>
     );
   }
 
   if (detailQuery.isLoading) {
     return (
-      <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
-        <CircularProgress />
+      <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
+        <CircularProgress aria-label={t('vaultDetail.loading', 'Loading Earn vault')} />
       </Box>
     );
   }
@@ -302,9 +311,13 @@ export default function VaultDetailsPage() {
   if (!vault || detailQuery.error) {
     return (
       <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-        <Typography color="error">Failed to load Earn vault: {(detailQuery.error as Error)?.message ?? 'Vault not found'}</Typography>
+        <Typography color="error">
+          {t('vaultDetail.loadFailed', 'Failed to load Earn vault: {message}', {
+            message: (detailQuery.error as Error)?.message ?? t('vaultDetail.notFound', 'Vault not found')
+          })}
+        </Typography>
         <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(`/earn?network=${chainId}`)} sx={{ marginTop: 2 }}>
-          Back to Earn
+          {t('vaultDetail.back', 'Back to Earn')}
         </Button>
       </Paper>
     );
@@ -313,8 +326,8 @@ export default function VaultDetailsPage() {
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, marginBottom: 2.5 }}>
-        <Tooltip title="Back to Earn">
-          <IconButton onClick={() => navigate(`/earn?network=${chainId}`)} aria-label="Back to Earn">
+        <Tooltip title={t('vaultDetail.back', 'Back to Earn')}>
+          <IconButton onClick={() => navigate(`/earn?network=${chainId}`)} aria-label={t('vaultDetail.back', 'Back to Earn')}>
             <ArrowBackIcon />
           </IconButton>
         </Tooltip>
@@ -324,8 +337,12 @@ export default function VaultDetailsPage() {
             <Typography variant="body1" sx={{ color: 'text.secondary' }} noWrap>
               {vault.name}
             </Typography>
-            <Tooltip title={copySuccessMsg || 'Copy vault link'}>
-              <IconButton size="small" onClick={() => copyToClipboard(window.location.href)} aria-label="Copy vault link">
+            <Tooltip title={copySuccessMsg || t('vaultDetail.copyLink', 'Copy vault link')}>
+              <IconButton
+                size="small"
+                onClick={() => copyToClipboard(window.location.href)}
+                aria-label={t('vaultDetail.copyLink', 'Copy vault link')}
+              >
                 <ContentCopyIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
@@ -339,41 +356,37 @@ export default function VaultDetailsPage() {
           <Stack spacing={2}>
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2.5 }}>
-                Overview
+                {t('common.overview', 'Overview')}
               </Typography>
               <Grid container spacing={3}>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" sx={{ color: 'text.secondary', marginBottom: 0.75 }}>
-                    Price
+                    {t('common.price', 'Price')}
                   </Typography>
                   <Typography variant="h4">${assetPriceUsd.toFixed(2)}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" sx={{ color: 'text.secondary', marginBottom: 0.75 }}>
-                    Performance fee
+                    {t('vaultDetail.performanceFee', 'Performance fee')}
                   </Typography>
                   <Typography variant="h4">{formatFee(vault.management?.performanceFee)}</Typography>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" sx={{ color: 'text.secondary', marginBottom: 0.75 }}>
-                    Curator
+                    {t('common.curator', 'Curator')}
                   </Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                    <Avatar
-                      src={entityLogoUrl(curator?.logo)}
-                      alt={curator?.name ?? 'Curator'}
-                      sx={{ width: 24, height: 24, fontSize: 10 }}
-                    >
+                    <Avatar src={entityLogoUrl(curator?.logo)} alt="" aria-hidden="true" sx={{ width: 24, height: 24, fontSize: 10 }}>
                       {(curator?.name ?? 'C').slice(0, 1)}
                     </Avatar>
-                    <Typography variant="h4">{curator?.name ?? 'Unknown'}</Typography>
+                    <Typography variant="h4">{curator?.name ?? t('common.unknown', 'Unknown')}</Typography>
                   </Box>
                 </Grid>
                 <Grid size={{ xs: 6 }}>
                   <Typography variant="body2" sx={{ color: 'text.secondary', marginBottom: 0.75 }}>
-                    Vault type
+                    {t('common.vaultType', 'Vault type')}
                   </Typography>
-                  <Chip icon={<AccountBalanceOutlinedIcon />} label="Curated" variant="outlined" size="small" />
+                  <Chip icon={<AccountBalanceOutlinedIcon />} label={t('vaultDetail.curated', 'Curated')} variant="outlined" size="small" />
                 </Grid>
               </Grid>
               {label?.description && (
@@ -385,31 +398,44 @@ export default function VaultDetailsPage() {
 
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2.5 }}>
-                Statistics
+                {t('common.statistics', 'Statistics')}
               </Typography>
               <Stack spacing={2.25}>
-                <StatRow label="Total supply" value={<Typography>{formatUsd(vault.totalSupplyUsd)}</Typography>} />
-                <StatRow label="Available liquidity" value={<Typography>{formatUsd(vault.availableAssetsUsd ?? 0)}</Typography>} />
-                <StatRow label="Total strategies" value={<Typography>{vault.strategyCount}</Typography>} />
-                <StatRow label="Supply APY" value={<Typography>{currentApy == null ? '-' : `${currentApy.toFixed(2)}%`}</Typography>} />
+                <StatRow
+                  label={t('common.totalSupply', 'Total supply')}
+                  value={<Typography>{formatUsd(vault.totalSupplyUsd)}</Typography>}
+                />
+                <StatRow
+                  label={t('common.availableLiquidity', 'Available liquidity')}
+                  value={<Typography>{formatUsd(vault.availableAssetsUsd ?? 0)}</Typography>}
+                />
+                <StatRow
+                  label={t('vaultDetail.totalStrategies', 'Total strategies')}
+                  value={<Typography>{vault.strategyCount}</Typography>}
+                />
+                <StatRow
+                  label={t('common.supplyApy', 'Supply APY')}
+                  value={<Typography>{currentApy == null ? '-' : `${currentApy.toFixed(2)}%`}</Typography>}
+                />
               </Stack>
             </Paper>
 
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                <Typography variant="h3">Performance</Typography>
+                <Typography variant="h3">{t('vaultDetail.performance', 'Performance')}</Typography>
                 <Select
                   size="small"
                   value={performanceMetric}
                   onChange={(event) => setPerformanceMetric(event.target.value as PerformanceMetric)}
+                  inputProps={{ 'aria-label': t('vaultDetail.performanceMetric', 'Performance metric') }}
                 >
-                  <MenuItem value="totalSupply">Total supply</MenuItem>
-                  <MenuItem value="apy">APY</MenuItem>
+                  <MenuItem value="totalSupply">{t('common.totalSupply', 'Total supply')}</MenuItem>
+                  <MenuItem value="apy">{t('common.apy', 'APY')}</MenuItem>
                 </Select>
               </Box>
               {totalsQuery.isLoading ? (
-                <Box sx={{ height: 260, display: 'grid', placeItems: 'center' }}>
-                  <CircularProgress size={28} />
+                <Box role="status" aria-live="polite" sx={{ height: 260, display: 'grid', placeItems: 'center' }}>
+                  <CircularProgress size={28} aria-label={t('vaultDetail.loadingHistory', 'Loading performance history')} />
                 </Box>
               ) : (
                 <PerformanceChart
@@ -425,7 +451,7 @@ export default function VaultDetailsPage() {
                 size="small"
                 value={performanceRange}
                 onChange={(_, value: PerformanceRange | null) => value && setPerformanceRange(value)}
-                aria-label="Performance range"
+                aria-label={t('vaultDetail.performanceRange', 'Performance range')}
               >
                 <ToggleButton value={7}>7D</ToggleButton>
                 <ToggleButton value={30}>30D</ToggleButton>
@@ -435,7 +461,7 @@ export default function VaultDetailsPage() {
 
             <Accordion defaultExpanded sx={accordionSx}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="h3">Exposure</Typography>
+                <Typography variant="h3">{t('vaultDetail.exposure', 'Exposure')}</Typography>
               </AccordionSummary>
               <AccordionDetails sx={{ paddingTop: 0 }}>
                 <Stack divider={<Box sx={{ borderTop: `1px solid ${theme.palette.divider}` }} />}>
@@ -446,25 +472,25 @@ export default function VaultDetailsPage() {
                       <Grid key={strategy.address} container spacing={2} sx={{ paddingY: 2 }} alignItems="center">
                         <Grid size={{ xs: 12, sm: 4 }}>
                           <Typography variant="body1" noWrap>
-                            {strategy.name ?? strategy.symbol ?? 'Strategy'}
+                            {strategy.name ?? strategy.symbol ?? t('vaultDetail.strategy', 'Strategy')}
                           </Typography>
                           <Chip label={strategy.status.replace('_', ' ')} size="small" variant="outlined" sx={{ marginTop: 0.75 }} />
                         </Grid>
                         <Grid size={{ xs: 6, sm: 2 }}>
                           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                            Allocation
+                            {t('vaultDetail.allocation', 'Allocation')}
                           </Typography>
                           <Typography>{allocation.toFixed(2)}%</Typography>
                         </Grid>
                         <Grid size={{ xs: 6, sm: 2 }}>
                           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                            Supplied
+                            {t('portfolio.supplied', 'Supplied')}
                           </Typography>
                           <Typography>{formatUsd(strategy.allocatedAssetsUsd)}</Typography>
                         </Grid>
                         <Grid size={{ xs: 12, sm: 4 }} sx={{ textAlign: { sm: 'right' } }}>
                           <Typography variant="body2" sx={{ color: 'text.secondary', marginBottom: 0.5 }}>
-                            Collateral exposure
+                            {t('vaultDetail.collateralExposure', 'Collateral exposure')}
                           </Typography>
                           {(strategyVault?.collaterals?.filter((collateral) => collateral.asset && collateral.assetSymbol).length ?? 0) >
                           0 ? (
@@ -495,29 +521,39 @@ export default function VaultDetailsPage() {
 
             <Accordion sx={accordionSx}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="h3">Management</Typography>
+                <Typography variant="h3">{t('vaultDetail.management', 'Management')}</Typography>
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={2.25}>
-                  <AddressRow label="Owner" address={vault.management?.owner} chainId={chainId} />
-                  <AddressRow label="Curator" address={vault.management?.curator} chainId={chainId} />
-                  <AddressRow label="Guardian" address={vault.management?.guardian} chainId={chainId} />
-                  <AddressRow label="Fee recipient" address={vault.management?.feeRecipient} chainId={chainId} />
-                  <StatRow label="Timelock" value={<Typography>{formatDuration(vault.management?.timelockSeconds)}</Typography>} />
-                  <StatRow label="Performance fee" value={<Typography>{formatFee(vault.management?.performanceFee)}</Typography>} />
+                  <AddressRow label={t('vaultDetail.owner', 'Owner')} address={vault.management?.owner} chainId={chainId} />
+                  <AddressRow label={t('common.curator', 'Curator')} address={vault.management?.curator} chainId={chainId} />
+                  <AddressRow label={t('vaultDetail.guardian', 'Guardian')} address={vault.management?.guardian} chainId={chainId} />
+                  <AddressRow
+                    label={t('vaultDetail.feeRecipient', 'Fee recipient')}
+                    address={vault.management?.feeRecipient}
+                    chainId={chainId}
+                  />
+                  <StatRow
+                    label={t('vaultDetail.timelock', 'Timelock')}
+                    value={<Typography>{formatDuration(vault.management?.timelockSeconds, t)}</Typography>}
+                  />
+                  <StatRow
+                    label={t('vaultDetail.performanceFee', 'Performance fee')}
+                    value={<Typography>{formatFee(vault.management?.performanceFee)}</Typography>}
+                  />
                 </Stack>
               </AccordionDetails>
             </Accordion>
 
             <Accordion sx={accordionSx}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="h3">Addresses</Typography>
+                <Typography variant="h3">{t('common.addresses', 'Addresses')}</Typography>
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={2.25}>
-                  <AddressRow label="Vault" address={vault.address} chainId={chainId} />
+                  <AddressRow label={t('common.vault', 'Vault')} address={vault.address} chainId={chainId} />
                   <AddressRow label={vault.asset.symbol} address={vault.asset.address} chainId={chainId} />
-                  <AddressRow label="Creator" address={vault.governance?.creator} chainId={chainId} />
+                  <AddressRow label={t('vaultDetail.creator', 'Creator')} address={vault.governance?.creator} chainId={chainId} />
                 </Stack>
               </AccordionDetails>
             </Accordion>
@@ -530,11 +566,11 @@ export default function VaultDetailsPage() {
               value={actionTab}
               onChange={(_, value) => setActionTab(value)}
               variant="fullWidth"
-              aria-label="Earn vault actions"
+              aria-label={t('vaultDetail.actionsLabel', 'Earn vault actions')}
               sx={{ marginBottom: 2.5 }}
             >
-              <Tab label="Supply" />
-              <Tab label="Withdraw" />
+              <Tab label={t('common.supply', 'Supply')} />
+              <Tab label={t('common.withdraw', 'Withdraw')} />
             </Tabs>
             {actionTab === 0 ? (
               <DepositTab

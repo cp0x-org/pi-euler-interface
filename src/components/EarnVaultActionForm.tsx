@@ -7,6 +7,7 @@ import { useAccount, usePublicClient, useReadContract, useReadContracts, useSwit
 
 import { ERC20_ABI, ERC4626_ABI } from '@/contracts/erc4626';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import { EulerEarnVault } from 'types/euler';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
 import { dispatchError, dispatchSuccess } from 'utils/snackbar';
@@ -37,13 +38,14 @@ function minBigInt(a: bigint, b: bigint): bigint {
   return a < b ? a : b;
 }
 
-function transactionError(error: unknown): string {
+function transactionError(error: unknown, fallback: string): string {
   if (error instanceof BaseError) return error.shortMessage;
-  return error instanceof Error ? error.message : 'Transaction failed';
+  return error instanceof Error ? error.message : fallback;
 }
 
 export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUsd, tokenLogoUrl, onSuccess }: EarnVaultActionFormProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const { address, chainId: connectedChainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
@@ -146,11 +148,11 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
   };
 
   const waitForReceipt = async (hash: Address) => {
-    if (!publicClient) throw new Error('RPC client is not available for this network');
+    if (!publicClient) throw new Error(t('form.rpcUnavailableNetwork', 'RPC client is not available for this network'));
     setTransactionHash(hash);
     setStep('confirming');
     const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
-    if (receipt.status !== 'success') throw new Error('Transaction reverted');
+    if (receipt.status !== 'success') throw new Error(t('form.txReverted', 'Transaction reverted'));
   };
 
   const approve = async (amount: bigint) => {
@@ -178,8 +180,10 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
     });
     await waitForReceipt(await writeContractAsync(approval.request));
     await accountReads.refetch();
-    setTransactionMessage(`${vault.asset.symbol} spending approved. Submit again to supply.`);
-    dispatchSuccess(`${vault.asset.symbol} approval confirmed`);
+    setTransactionMessage(
+      t('earnForm.approvalConfirmedRetry', '{symbol} spending approved. Submit again to supply.', { symbol: vault.asset.symbol })
+    );
+    dispatchSuccess(t('form.approvalConfirmed', '{symbol} approval confirmed', { symbol: vault.asset.symbol }));
   };
 
   const supply = async () => {
@@ -193,8 +197,8 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
       args: [amountRaw, accountAddress]
     });
     await waitForReceipt(await writeContractAsync(simulation.request));
-    setTransactionMessage(`Supplied ${inputAmount} ${vault.asset.symbol}.`);
-    dispatchSuccess('Supply transaction confirmed');
+    setTransactionMessage(t('earnForm.supplied', 'Supplied {amount} {symbol}.', { amount: inputAmount, symbol: vault.asset.symbol }));
+    dispatchSuccess(t('earnForm.supplyTxConfirmed', 'Supply transaction confirmed'));
   };
 
   const withdraw = async () => {
@@ -208,8 +212,8 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
       args: [amountRaw, accountAddress, accountAddress]
     });
     await waitForReceipt(await writeContractAsync(simulation.request));
-    setTransactionMessage(`Withdrew ${inputAmount} ${vault.asset.symbol}.`);
-    dispatchSuccess('Withdraw transaction confirmed');
+    setTransactionMessage(t('earnForm.withdrew', 'Withdrew {amount} {symbol}.', { amount: inputAmount, symbol: vault.asset.symbol }));
+    dispatchSuccess(t('earnForm.withdrawTxConfirmed', 'Withdraw transaction confirmed'));
   };
 
   const handleSubmit = async () => {
@@ -241,7 +245,7 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
         onSuccess();
       }
     } catch (error) {
-      const message = transactionError(error);
+      const message = transactionError(error, t('form.txFailed', 'Transaction failed'));
       setTransactionMessage(message);
       setTransactionFailed(true);
       dispatchError(message);
@@ -253,18 +257,20 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
   const buttonLabel = (() => {
     if (busy) {
       const labels: Record<Exclude<TransactionStep, 'idle'>, string> = {
-        resetting: 'Resetting allowance...',
-        approving: `Approving ${vault.asset.symbol}...`,
-        supplying: `Supplying ${vault.asset.symbol}...`,
-        withdrawing: `Withdrawing ${vault.asset.symbol}...`,
-        confirming: 'Confirming transaction...'
+        resetting: t('form.resettingAllowance', 'Resetting allowance...'),
+        approving: t('form.approvingSymbol', 'Approving {symbol}...', { symbol: vault.asset.symbol }),
+        supplying: t('earnForm.supplyingSymbol', 'Supplying {symbol}...', { symbol: vault.asset.symbol }),
+        withdrawing: t('earnForm.withdrawingSymbol', 'Withdrawing {symbol}...', { symbol: vault.asset.symbol }),
+        confirming: t('form.confirmingTx', 'Confirming transaction...')
       };
       return labels[step as Exclude<TransactionStep, 'idle'>];
     }
-    if (!accountAddress) return 'Connect wallet';
-    if (wrongNetwork) return 'Switch network';
-    if (approvalRequired) return `Approve ${vault.asset.symbol}`;
-    return mode === 'supply' ? `Supply ${vault.asset.symbol}` : `Withdraw ${vault.asset.symbol}`;
+    if (!accountAddress) return t('wallet.connectShort', 'Connect wallet');
+    if (wrongNetwork) return t('wallet.switchNetwork', 'Switch network');
+    if (approvalRequired) return t('form.approveSymbol', 'Approve {symbol}', { symbol: vault.asset.symbol });
+    return mode === 'supply'
+      ? t('earnForm.supplySymbol', 'Supply {symbol}', { symbol: vault.asset.symbol })
+      : t('earnForm.withdrawSymbol', 'Withdraw {symbol}', { symbol: vault.asset.symbol });
   })();
 
   const buttonDisabled = busy || (Boolean(accountAddress) && !wrongNetwork && (amountRaw <= 0n || amountExceedsBalance));
@@ -273,13 +279,13 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
   return (
     <Stack spacing={2}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h3">{mode === 'supply' ? 'Supply APY' : 'Withdraw'}</Typography>
+        <Typography variant="h3">{mode === 'supply' ? t('common.supplyApy', 'Supply APY') : t('common.withdraw', 'Withdraw')}</Typography>
         <Typography variant="h3">{mode === 'supply' && vault.supplyApy != null ? `${vault.supplyApy.toFixed(2)}%` : ''}</Typography>
       </Box>
 
       <Paper variant="outlined" sx={{ padding: 2, borderRadius: 1, borderColor: theme.palette.divider }}>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          {mode === 'supply' ? 'Supply amount' : 'Withdraw amount'}
+          {mode === 'supply' ? t('earnForm.supplyAmount', 'Supply amount') : t('earnForm.withdrawAmount', 'Withdraw amount')}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginY: 1 }}>
           <InputBase
@@ -288,7 +294,13 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
             onChange={(event) => handleAmountChange(event.target.value)}
             placeholder="0.00"
             disabled={busy}
-            inputProps={{ inputMode: 'decimal', 'aria-label': `${mode} amount` }}
+            inputProps={{
+              inputMode: 'decimal',
+              'aria-label':
+                mode === 'supply'
+                  ? t('earnForm.supplyAmountInputLabel', 'Amount of {symbol} to supply', { symbol: vault.asset.symbol })
+                  : t('earnForm.withdrawAmountInputLabel', 'Amount of {symbol} to withdraw', { symbol: vault.asset.symbol })
+            }}
             sx={{ '& input': { fontSize: 32, fontWeight: 500, padding: 0 } }}
           />
           <TokenIcon symbol={vault.asset.symbol} logoUrl={tokenLogoUrl} avatarProps={{ sx: { width: 24, height: 24, fontSize: 9 } }} />
@@ -302,8 +314,14 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               {accountAddress ? formatRawAmount(availableAmount, vault.asset.decimals) : '0'} {vault.asset.symbol}
             </Typography>
-            <Button size="small" onClick={handleMax} disabled={!accountAddress || availableAmount === 0n || busy} sx={{ minWidth: 0 }}>
-              Max
+            <Button
+              size="small"
+              onClick={handleMax}
+              disabled={!accountAddress || availableAmount === 0n || busy}
+              aria-label={t('form.useMax', 'Use maximum available {symbol}', { symbol: vault.asset.symbol })}
+              sx={{ minWidth: 0 }}
+            >
+              {t('common.max', 'Max')}
             </Button>
           </Box>
         </Box>
@@ -312,17 +330,19 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
       <Box sx={{ borderTop: `1px solid ${theme.palette.divider}` }}>
         {mode === 'supply' && (
           <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5 }}>
-            <Typography sx={{ color: 'text.secondary' }}>Supply APY</Typography>
+            <Typography sx={{ color: 'text.secondary' }}>{t('common.supplyApy', 'Supply APY')}</Typography>
             <Typography>{vault.supplyApy == null ? '-' : `${vault.supplyApy.toFixed(2)}%`}</Typography>
           </Box>
         )}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
-          <Typography sx={{ color: 'text.secondary' }}>{mode === 'supply' ? 'Vault shares received' : 'Vault shares burned'}</Typography>
+          <Typography sx={{ color: 'text.secondary' }}>
+            {mode === 'supply' ? t('form.sharesReceived', 'Vault shares received') : t('form.sharesBurned', 'Vault shares burned')}
+          </Typography>
           <Typography>{previewShares === undefined ? '-' : formatRawAmount(previewShares, shareDecimals)}</Typography>
         </Box>
         {mode === 'withdraw' && (
           <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
-            <Typography sx={{ color: 'text.secondary' }}>Share balance</Typography>
+            <Typography sx={{ color: 'text.secondary' }}>{t('form.shareBalance', 'Share balance')}</Typography>
             <Typography>{formatRawAmount(shareBalance, shareDecimals)}</Typography>
           </Box>
         )}
@@ -330,13 +350,23 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
 
       {amountExceedsBalance && (
         <Alert severity="warning">
-          Amount exceeds your {mode === 'supply' ? 'wallet balance or deposit limit' : 'currently withdrawable balance'}.
+          {mode === 'supply'
+            ? t('form.exceedsSupplyLimit', 'Amount exceeds your wallet balance or deposit limit.')
+            : t('form.exceedsWithdrawable', 'Amount exceeds your currently withdrawable balance.')}
         </Alert>
       )}
       {transactionMessage && <Alert severity={transactionFailed ? 'error' : 'success'}>{transactionMessage}</Alert>}
       {explorerUrl && (
-        <Link href={explorerUrl} target="_blank" rel="noreferrer" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-          View transaction <OpenInNewIcon sx={{ fontSize: 16 }} />
+        <Link
+          href={explorerUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('form.viewTxLabel', 'View transaction {hash} in the block explorer', {
+            hash: transactionHash ? `${transactionHash.slice(0, 6)}…${transactionHash.slice(-4)}` : ''
+          })}
+          sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+        >
+          {t('form.viewTx', 'View transaction')} <OpenInNewIcon sx={{ fontSize: 16 }} />
         </Link>
       )}
 
@@ -346,6 +376,7 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
         size="large"
         onClick={handleSubmit}
         disabled={buttonDisabled}
+        aria-busy={busy}
         sx={{ minHeight: 48, fontWeight: 600 }}
       >
         {busy && <CircularProgress size={18} color="inherit" sx={{ marginRight: 1 }} />}
@@ -353,7 +384,9 @@ export default function EarnVaultActionForm({ mode, vault, chainId, assetPriceUs
       </Button>
 
       {mode === 'withdraw' && maxRedeem > 0n && maxWithdraw === 0n && (
-        <Alert severity="info">Your shares are present, but the vault currently reports no immediately withdrawable assets.</Alert>
+        <Alert severity="info">
+          {t('earnForm.noWithdrawable', 'Your shares are present, but the vault currently reports no immediately withdrawable assets.')}
+        </Alert>
       )}
     </Stack>
   );

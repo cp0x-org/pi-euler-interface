@@ -7,6 +7,7 @@ import { useAccount, usePublicClient, useReadContract, useReadContracts, useSwit
 
 import { ERC20_ABI, ERC4626_ABI } from '@/contracts/erc4626';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
 import { dispatchError, dispatchSuccess } from 'utils/snackbar';
 
@@ -22,8 +23,8 @@ interface VaultActionFormProps {
   supplyApy?: number;
   assetPriceUsd: number;
   tokenLogoUrl: string;
-  supplyLabel?: string; // e.g. "Supply" (default) or "Add collateral"
-  withdrawLabel?: string; // e.g. "Withdraw" (default) or "Remove collateral"
+  supplyLabel?: string; // e.g. the translated "Supply" (default) or "Add collateral"
+  withdrawLabel?: string; // e.g. the translated "Withdraw" (default) or "Remove collateral"
   onSuccess: () => void;
 }
 
@@ -47,11 +48,12 @@ export default function VaultActionForm({
   supplyApy,
   assetPriceUsd,
   tokenLogoUrl,
-  supplyLabel = 'Supply',
-  withdrawLabel = 'Withdraw',
+  supplyLabel,
+  withdrawLabel,
   onSuccess
 }: VaultActionFormProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const { address, chainId: connectedChainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
@@ -64,7 +66,8 @@ export default function VaultActionForm({
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
 
-  const actionVerb = mode === 'supply' ? supplyLabel : withdrawLabel;
+  const actionVerb =
+    mode === 'supply' ? (supplyLabel ?? t('common.supply', 'Supply')) : (withdrawLabel ?? t('common.withdraw', 'Withdraw'));
 
   useEffect(() => {
     setAmount('');
@@ -133,11 +136,11 @@ export default function VaultActionForm({
   const needsApprove = mode === 'supply' && amountRaw > allowance;
 
   const wait = async (txHash: Address) => {
-    if (!publicClient) throw new Error('RPC client is not available');
+    if (!publicClient) throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
     setHash(txHash);
     setStep('confirming');
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-    if (receipt.status !== 'success') throw new Error('Transaction reverted');
+    if (receipt.status !== 'success') throw new Error(t('form.txReverted', 'Transaction reverted'));
   };
 
   const submit = async () => {
@@ -170,8 +173,13 @@ export default function VaultActionForm({
         });
         await wait(await writeContractAsync(approval.request));
         setStep('idle');
-        setMessage(`Approval confirmed. Submit again to ${actionVerb.toLowerCase()} ${asset.symbol}.`);
-        dispatchSuccess(`${asset.symbol} approval confirmed`);
+        setMessage(
+          t('form.approvalConfirmedRetry', 'Approval confirmed. Submit again to {action} {symbol}.', {
+            action: actionVerb.toLowerCase(),
+            symbol: asset.symbol
+          })
+        );
+        dispatchSuccess(t('form.approvalConfirmed', '{symbol} approval confirmed', { symbol: asset.symbol }));
         await reads.refetch();
         return;
       }
@@ -186,8 +194,10 @@ export default function VaultActionForm({
           args: [amountRaw, address]
         });
         await wait(await writeContractAsync(deposit.request));
-        setMessage(`${actionVerb} confirmed: ${amount} ${asset.symbol}.`);
-        dispatchSuccess(`${actionVerb} transaction confirmed`);
+        setMessage(
+          t('form.actionConfirmed', '{action} confirmed: {amount} {symbol}.', { action: actionVerb, amount, symbol: asset.symbol })
+        );
+        dispatchSuccess(t('form.actionTxConfirmed', '{action} transaction confirmed', { action: actionVerb }));
       } else {
         setStep('withdrawing');
         const withdrawTx = await publicClient.simulateContract({
@@ -198,14 +208,17 @@ export default function VaultActionForm({
           args: [amountRaw, address, address]
         });
         await wait(await writeContractAsync(withdrawTx.request));
-        setMessage(`${actionVerb} confirmed: ${amount} ${asset.symbol}.`);
-        dispatchSuccess(`${actionVerb} transaction confirmed`);
+        setMessage(
+          t('form.actionConfirmed', '{action} confirmed: {amount} {symbol}.', { action: actionVerb, amount, symbol: asset.symbol })
+        );
+        dispatchSuccess(t('form.actionTxConfirmed', '{action} transaction confirmed', { action: actionVerb }));
       }
       setAmount('');
       await reads.refetch();
       onSuccess();
     } catch (error) {
-      const text = error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : 'Transaction failed';
+      const text =
+        error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : t('form.txFailed', 'Transaction failed');
       setMessage(text);
       setFailed(true);
       dispatchError(text);
@@ -217,32 +230,32 @@ export default function VaultActionForm({
   const buttonLabel = busy
     ? (
         {
-          resetting: 'Resetting allowance...',
-          approving: `Approving ${asset.symbol}...`,
-          supplying: `${actionVerb}...`,
-          withdrawing: `${actionVerb}...`,
-          confirming: 'Confirming transaction...',
+          resetting: t('form.resettingAllowance', 'Resetting allowance...'),
+          approving: t('form.approvingSymbol', 'Approving {symbol}...', { symbol: asset.symbol }),
+          supplying: t('form.actionInProgress', '{action}...', { action: actionVerb }),
+          withdrawing: t('form.actionInProgress', '{action}...', { action: actionVerb }),
+          confirming: t('form.confirmingTx', 'Confirming transaction...'),
           idle: ''
         } as Record<Step, string>
       )[step]
     : !address
-      ? 'Connect wallet'
+      ? t('wallet.connectShort', 'Connect wallet')
       : wrongNetwork
-        ? 'Switch network'
+        ? t('wallet.switchNetwork', 'Switch network')
         : needsApprove
-          ? `Approve ${asset.symbol}`
-          : `${actionVerb} ${asset.symbol}`;
+          ? t('form.approveSymbol', 'Approve {symbol}', { symbol: asset.symbol })
+          : t('form.actionWithSymbol', '{action} {symbol}', { action: actionVerb, symbol: asset.symbol });
 
   return (
     <Stack spacing={2}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h3">{mode === 'supply' && supplyApy != null ? 'Supply APY' : actionVerb}</Typography>
+        <Typography variant="h3">{mode === 'supply' && supplyApy != null ? t('common.supplyApy', 'Supply APY') : actionVerb}</Typography>
         <Typography variant="h3">{mode === 'supply' && supplyApy != null ? `${supplyApy.toFixed(2)}%` : ''}</Typography>
       </Box>
 
       <Paper variant="outlined" sx={{ padding: 2, borderRadius: 1, borderColor: theme.palette.divider }}>
         <Typography variant="body2" color="text.secondary">
-          {actionVerb} amount
+          {t('form.amountLabel', '{action} amount', { action: actionVerb })}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginY: 1 }}>
           <InputBase
@@ -251,7 +264,13 @@ export default function VaultActionForm({
             onChange={(event) => setAmount(formatAssetOutput(event.target.value))}
             placeholder="0.00"
             disabled={busy}
-            inputProps={{ inputMode: 'decimal', 'aria-label': `${mode} amount` }}
+            inputProps={{
+              inputMode: 'decimal',
+              'aria-label': t('form.amountInputLabel', 'Amount of {symbol} to {action}', {
+                symbol: asset.symbol,
+                action: actionVerb.toLowerCase()
+              })
+            }}
             sx={{ '& input': { fontSize: 32, fontWeight: 500, padding: 0 } }}
           />
           <TokenIcon symbol={asset.symbol} logoUrl={tokenLogoUrl} avatarProps={{ sx: { width: 24, height: 24, fontSize: 9 } }} />
@@ -267,8 +286,9 @@ export default function VaultActionForm({
               size="small"
               onClick={() => setAmount(inputFromRaw(available, asset.decimals))}
               disabled={!address || available === 0n || busy}
+              aria-label={t('form.useMax', 'Use maximum available {symbol}', { symbol: asset.symbol })}
             >
-              Max
+              {t('common.max', 'Max')}
             </Button>
           </Typography>
         </Box>
@@ -277,17 +297,19 @@ export default function VaultActionForm({
       <Box sx={{ borderTop: `1px solid ${theme.palette.divider}` }}>
         {mode === 'supply' && supplyApy != null && (
           <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5 }}>
-            <Typography color="text.secondary">Supply APY</Typography>
+            <Typography color="text.secondary">{t('common.supplyApy', 'Supply APY')}</Typography>
             <Typography>{supplyApy.toFixed(2)}%</Typography>
           </Box>
         )}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
-          <Typography color="text.secondary">{mode === 'supply' ? 'Vault shares received' : 'Vault shares burned'}</Typography>
+          <Typography color="text.secondary">
+            {mode === 'supply' ? t('form.sharesReceived', 'Vault shares received') : t('form.sharesBurned', 'Vault shares burned')}
+          </Typography>
           <Typography>{preview.data === undefined ? '-' : rawText(preview.data as bigint, shareDecimals)}</Typography>
         </Box>
         {mode === 'withdraw' && (
           <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
-            <Typography color="text.secondary">Share balance</Typography>
+            <Typography color="text.secondary">{t('form.shareBalance', 'Share balance')}</Typography>
             <Typography>{rawText(shareBalance, shareDecimals)}</Typography>
           </Box>
         )}
@@ -295,13 +317,22 @@ export default function VaultActionForm({
 
       {exceeds && (
         <Alert severity="warning">
-          Amount exceeds your {mode === 'supply' ? 'wallet balance or deposit limit' : 'currently withdrawable balance'}.
+          {mode === 'supply'
+            ? t('form.exceedsSupplyLimit', 'Amount exceeds your wallet balance or deposit limit.')
+            : t('form.exceedsWithdrawable', 'Amount exceeds your currently withdrawable balance.')}
         </Alert>
       )}
       {message && <Alert severity={failed ? 'error' : 'success'}>{message}</Alert>}
       {hash && chainId === 1 && (
-        <Link href={`https://etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
-          View transaction <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
+        <Link
+          href={`https://etherscan.io/tx/${hash}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('form.viewTxLabel', 'View transaction {hash} in the block explorer', {
+            hash: `${hash.slice(0, 6)}…${hash.slice(-4)}`
+          })}
+        >
+          {t('form.viewTx', 'View transaction')} <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
         </Link>
       )}
 
@@ -311,6 +342,7 @@ export default function VaultActionForm({
         size="large"
         onClick={submit}
         disabled={busy || (Boolean(address) && !wrongNetwork && (amountRaw <= 0n || exceeds))}
+        aria-busy={busy}
         sx={{ minHeight: 48, fontWeight: 600 }}
       >
         {busy && <CircularProgress size={18} color="inherit" sx={{ marginRight: 1 }} />}

@@ -8,6 +8,7 @@ import { useAccount, usePublicClient, useReadContracts, useSwitchChain, useWrite
 import { ERC20_ABI } from '@/contracts/erc4626';
 import { EVAULT_ABI } from '@/contracts/evk';
 import { TokenIcon } from 'components/TokenIcon';
+import useTranslate from 'hooks/useTranslate';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
 import { dispatchError, dispatchSuccess } from 'utils/snackbar';
 
@@ -33,6 +34,7 @@ function minBigInt(a: bigint, b: bigint): bigint {
 
 export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, tokenLogoUrl, onSuccess }: RepayFormProps) {
   const theme = useTheme();
+  const t = useTranslate();
   const { address, chainId: connectedChainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
@@ -87,11 +89,11 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
   const canSubmit = amountRaw > 0n && !exceedsBalance && !noDebt;
 
   const wait = async (txHash: Address) => {
-    if (!publicClient) throw new Error('RPC client is not available');
+    if (!publicClient) throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
     setHash(txHash);
     setStep('confirming');
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-    if (receipt.status !== 'success') throw new Error('Transaction reverted');
+    if (receipt.status !== 'success') throw new Error(t('form.txReverted', 'Transaction reverted'));
   };
 
   const submit = async () => {
@@ -124,8 +126,8 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
         });
         await wait(await writeContractAsync(approval.request));
         setStep('idle');
-        setMessage(`Approval confirmed. Submit again to repay ${symbol}.`);
-        dispatchSuccess(`${symbol} approval confirmed`);
+        setMessage(t('repay.approvalConfirmedRetry', 'Approval confirmed. Submit again to repay {symbol}.', { symbol }));
+        dispatchSuccess(t('form.approvalConfirmed', '{symbol} approval confirmed', { symbol }));
         await reads.refetch();
         return;
       }
@@ -139,13 +141,18 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
         args: [repayFull ? maxUint256 : amountRaw, address]
       });
       await wait(await writeContractAsync(repay.request));
-      setMessage(repayFull ? `Repaid the full ${symbol} debt.` : `Repaid ${amount} ${symbol}.`);
-      dispatchSuccess('Repay transaction confirmed');
+      setMessage(
+        repayFull
+          ? t('repay.repaidFull', 'Repaid the full {symbol} debt.', { symbol })
+          : t('repay.repaidAmount', 'Repaid {amount} {symbol}.', { amount, symbol })
+      );
+      dispatchSuccess(t('repay.txConfirmed', 'Repay transaction confirmed'));
       setAmount('');
       await reads.refetch();
       onSuccess();
     } catch (error) {
-      const text = error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : 'Transaction failed';
+      const text =
+        error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : t('form.txFailed', 'Transaction failed');
       setMessage(text);
       setFailed(true);
       dispatchError(text);
@@ -157,27 +164,27 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
   const buttonLabel = busy
     ? (
         {
-          resetting: 'Resetting allowance...',
-          approving: `Approving ${symbol}...`,
-          repaying: `Repaying ${symbol}...`,
-          confirming: 'Confirming transaction...',
+          resetting: t('form.resettingAllowance', 'Resetting allowance...'),
+          approving: t('form.approvingSymbol', 'Approving {symbol}...', { symbol }),
+          repaying: t('repay.repayingSymbol', 'Repaying {symbol}...', { symbol }),
+          confirming: t('form.confirmingTx', 'Confirming transaction...'),
           idle: ''
         } as Record<Step, string>
       )[step]
     : !address
-      ? 'Connect wallet'
+      ? t('wallet.connectShort', 'Connect wallet')
       : wrongNetwork
-        ? 'Switch network'
+        ? t('wallet.switchNetwork', 'Switch network')
         : needsApprove
-          ? `Approve ${symbol}`
+          ? t('form.approveSymbol', 'Approve {symbol}', { symbol })
           : repayFull
-            ? `Repay all ${symbol}`
-            : `Repay ${symbol}`;
+            ? t('repay.repayAllSymbol', 'Repay all {symbol}', { symbol })
+            : t('repay.repaySymbol', 'Repay {symbol}', { symbol });
 
   return (
     <Stack spacing={2}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h3">Repay</Typography>
+        <Typography variant="h3">{t('common.repay', 'Repay')}</Typography>
         <Typography variant="h3" sx={{ color: theme.palette.warning.main }}>
           {liabilityVault.borrowApy.toFixed(2)}%
         </Typography>
@@ -185,7 +192,7 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
 
       <Paper variant="outlined" sx={{ padding: 2, borderRadius: 1, borderColor: theme.palette.divider }}>
         <Typography variant="body2" color="text.secondary">
-          Repay amount
+          {t('repay.amountLabel', 'Repay amount')}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginY: 1 }}>
           <InputBase
@@ -194,7 +201,7 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
             onChange={(event) => setAmount(formatAssetOutput(event.target.value))}
             placeholder="0.00"
             disabled={busy}
-            inputProps={{ inputMode: 'decimal', 'aria-label': 'repay amount' }}
+            inputProps={{ inputMode: 'decimal', 'aria-label': t('repay.amountInputLabel', 'Amount of {symbol} to repay', { symbol }) }}
             sx={{ '& input': { fontSize: 32, fontWeight: 500, padding: 0 } }}
           />
           <TokenIcon symbol={symbol} logoUrl={tokenLogoUrl} avatarProps={{ sx: { width: 24, height: 24, fontSize: 9 } }} />
@@ -210,8 +217,9 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
               size="small"
               onClick={() => setAmount(inputFromRaw(maxRepayable, decimals))}
               disabled={!address || maxRepayable === 0n || busy}
+              aria-label={t('repay.useMax', 'Use maximum repayable {symbol}', { symbol })}
             >
-              Max
+              {t('common.max', 'Max')}
             </Button>
           </Typography>
         </Box>
@@ -219,22 +227,31 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
 
       <Box sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, padding: 2 }}>
         <Stack spacing={1.25}>
-          <Row label="Current debt" value={`${rawText(debt, decimals)} ${symbol}`} />
-          <Row label="Wallet balance" value={`${rawText(balance, decimals)} ${symbol}`} />
+          <Row label={t('common.currentDebt', 'Current debt')} value={`${rawText(debt, decimals)} ${symbol}`} />
+          <Row label={t('common.walletBalance', 'Wallet balance')} value={`${rawText(balance, decimals)} ${symbol}`} />
           <Row
-            label="Remaining debt"
+            label={t('repay.remainingDebt', 'Remaining debt')}
             value={`${rawText(remainingDebt, decimals)} ${symbol}`}
             valueColor={remainingDebt === 0n ? theme.palette.success.main : undefined}
           />
         </Stack>
       </Box>
 
-      {noDebt && address && <Alert severity="info">This position has no outstanding debt to repay.</Alert>}
-      {exceedsBalance && <Alert severity="warning">Repay amount exceeds your {symbol} wallet balance.</Alert>}
+      {noDebt && address && <Alert severity="info">{t('repay.noDebt', 'This position has no outstanding debt to repay.')}</Alert>}
+      {exceedsBalance && (
+        <Alert severity="warning">{t('repay.exceedsBalance', 'Repay amount exceeds your {symbol} wallet balance.', { symbol })}</Alert>
+      )}
       {message && <Alert severity={failed ? 'error' : 'success'}>{message}</Alert>}
       {hash && chainId === 1 && (
-        <Link href={`https://etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer">
-          View transaction <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
+        <Link
+          href={`https://etherscan.io/tx/${hash}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t('form.viewTxLabel', 'View transaction {hash} in the block explorer', {
+            hash: `${hash.slice(0, 6)}…${hash.slice(-4)}`
+          })}
+        >
+          {t('form.viewTx', 'View transaction')} <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
         </Link>
       )}
 
@@ -244,6 +261,7 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
         size="large"
         onClick={submit}
         disabled={busy || (Boolean(address) && !wrongNetwork && !canSubmit)}
+        aria-busy={busy}
         sx={{ minHeight: 48, fontWeight: 600 }}
       >
         {busy && <CircularProgress size={18} color="inherit" sx={{ marginRight: 1 }} />}

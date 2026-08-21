@@ -22,6 +22,7 @@ import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 import Tabs from '@mui/material/Tabs';
 import Tab, { TabProps } from '@mui/material/Tab';
 import MainCard from '../../ui-component/cards/MainCard';
+import useTranslate from 'hooks/useTranslate';
 
 // ==============================|| MAIN LAYOUT ||============================== //
 
@@ -89,8 +90,12 @@ const AntTab = styled((props: TabProps) => <Tab disableRipple {...props} />)(({ 
     }
   }
 }));
+// The routed content region; the section tabs point at it via aria-controls.
+const MAIN_CONTENT_ID = 'main-content';
+
 export default function MainLayout() {
   const theme = useTheme();
+  const t = useTranslate();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
 
   const { borderRadius, container, miniDrawer, menuOrientation } = useConfig();
@@ -98,11 +103,11 @@ export default function MainLayout() {
   const drawerOpen = menuMaster?.isDashboardDrawerOpened;
 
   const tabs = [
-    { label: 'Portfolio', path: 'portfolio', iconPosition: 'top' },
-    { label: 'Explore', path: 'explore', iconPosition: 'top' },
-    { label: 'Earn', path: 'earn', iconPosition: 'top' },
-    { label: 'Lend', path: 'lend', iconPosition: 'top' },
-    { label: 'Borrow', path: 'borrow', iconPosition: 'top' }
+    { label: t('nav.portfolio', 'Portfolio'), path: 'portfolio', iconPosition: 'top' },
+    { label: t('nav.explore', 'Explore'), path: 'explore', iconPosition: 'top' },
+    { label: t('nav.earn', 'Earn'), path: 'earn', iconPosition: 'top' },
+    { label: t('nav.lend', 'Lend'), path: 'lend', iconPosition: 'top' },
+    { label: t('nav.borrow', 'Borrow'), path: 'borrow', iconPosition: 'top' }
   ];
 
   const navigate = useNavigate();
@@ -155,25 +160,31 @@ export default function MainLayout() {
 
           {/*<MainCard>*/}
           <MainCard>
-            <AntTabs value={currentTabIndex} centered>
-              {tabs.map((tab, index) => (
-                <AntTab
-                  wrapped={true}
-                  key={tab.path}
-                  label={tab.label}
-                  onClick={() => {
-                    const tabPath = `/${tab.path}`;
-                    // click on the already-active tab
-                    if (currentTabIndex === index) {
-                      navigate(tabPath, { replace: true, state: { refresh: Date.now() } });
-                    } else {
-                      navigate(tabPath);
-                    }
-                  }}
-                />
-              ))}
-            </AntTabs>
-            <Box sx={{ pt: 3 }}>
+            {/* Section switcher: wrapped in a real <nav> landmark so the sections of the app are
+                discoverable, while MUI keeps the tab roles/selected state for the active section. */}
+            <Box component="nav" aria-label={t('nav.sections', 'App sections')}>
+              <AntTabs value={currentTabIndex === -1 ? false : currentTabIndex} centered>
+                {tabs.map((tab, index) => (
+                  <AntTab
+                    wrapped={true}
+                    key={tab.path}
+                    label={tab.label}
+                    aria-label={t('nav.sectionLabel', '{section} section', { section: tab.label })}
+                    aria-controls={MAIN_CONTENT_ID}
+                    onClick={() => {
+                      const tabPath = `/${tab.path}`;
+                      // click on the already-active tab
+                      if (currentTabIndex === index) {
+                        navigate(tabPath, { replace: true, state: { refresh: Date.now() } });
+                      } else {
+                        navigate(tabPath);
+                      }
+                    }}
+                  />
+                ))}
+              </AntTabs>
+            </Box>
+            <Box component="main" id={MAIN_CONTENT_ID} sx={{ pt: 3 }}>
               <Outlet />
             </Box>
           </MainCard>

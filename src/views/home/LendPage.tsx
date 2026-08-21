@@ -50,6 +50,8 @@ import ChainFilter, { ChainFilterValue } from 'components/ChainFilter';
 import { ChainBadge } from 'components/ChainIcon';
 import { TokenIcon } from 'components/TokenIcon';
 import { EulerProduct, EulerVaultRewards, V3VaultDetail } from 'types/euler';
+import useTranslate from 'hooks/useTranslate';
+import { getChainName } from 'utils/chains';
 import { formatShortUSDS } from 'utils/formatters';
 
 type SortMode = 'totalSupply' | 'supplyApy' | 'availableLiquidity' | 'utilization' | 'name';
@@ -145,14 +147,18 @@ function UtilizationValue({ value }: { value: number }) {
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-      <CircularProgress variant="determinate" value={percentage} size={22} thickness={5} sx={{ color }} />
+      <CircularProgress aria-hidden="true" variant="determinate" value={percentage} size={22} thickness={5} sx={{ color }} />
       <Typography variant="body1">{percentage.toFixed(2)}%</Typography>
     </Box>
   );
 }
 
+// Referenced by the exposure-filter toggle through aria-controls while the extra filter is shown.
+const EXPOSURE_FILTER_ID = 'lend-exposure-filter';
+
 export default function LendPage() {
   const theme = useTheme();
+  const t = useTranslate();
   const navigate = useNavigate();
   const { chains } = getRuntimeConfig();
 
@@ -383,26 +389,41 @@ export default function LendPage() {
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2.5, marginTop: 1 }}>
-        <Avatar variant="rounded" sx={{ width: 56, height: 56, bgcolor: 'transparent', border: `1px solid ${theme.palette.divider}` }}>
+        <Avatar
+          aria-hidden="true"
+          variant="rounded"
+          sx={{ width: 56, height: 56, bgcolor: 'transparent', border: `1px solid ${theme.palette.divider}` }}
+        >
           <ArrowDownwardIcon sx={{ color: theme.palette.secondary.main, fontSize: 32 }} />
         </Avatar>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h2">Lend</Typography>
+          <Typography variant="h2" component="h1">
+            {t('lend.title', 'Lend')}
+          </Typography>
           <Typography variant="body1" sx={{ color: theme.palette.grey[500] }}>
-            Supply assets to isolated lending markets. Earn yield from borrower demand.
+            {t('lend.subtitle', 'Supply assets to isolated lending markets. Earn yield from borrower demand.')}
           </Typography>
         </Box>
       </Box>
 
-      <Grid container spacing={1.25} sx={{ marginBottom: showExposureFilter ? 1.25 : 2.5 }} alignItems="center">
+      <Grid
+        container
+        component="search"
+        aria-label={t('lend.filtersLabel', 'Filter lending vaults')}
+        spacing={1.25}
+        sx={{ marginBottom: showExposureFilter ? 1.25 : 2.5 }}
+        alignItems="center"
+      >
         <Grid size={{ xs: 12, md: 3 }}>
           <TextField
             fullWidth
             size="small"
-            placeholder="Search by asset, market, curator..."
+            type="search"
+            placeholder={t('lend.searchPlaceholder', 'Search by asset, market, curator...')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             slotProps={{
+              htmlInput: { 'aria-label': t('lend.searchLabel', 'Search lending vaults by asset, market or curator') },
               input: {
                 startAdornment: (
                   <InputAdornment position="start">
@@ -422,13 +443,14 @@ export default function LendPage() {
             size="small"
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value as SortMode)}
+            inputProps={{ 'aria-label': t('lend.sortLabel', 'Sort lending vaults by') }}
             startAdornment={<SwapVertIcon sx={{ fontSize: 18, marginRight: 0.5, color: 'text.secondary' }} />}
           >
-            <MenuItem value="totalSupply">Total supply</MenuItem>
-            <MenuItem value="supplyApy">Supply APY</MenuItem>
-            <MenuItem value="availableLiquidity">Liquidity</MenuItem>
-            <MenuItem value="utilization">Utilization</MenuItem>
-            <MenuItem value="name">Name</MenuItem>
+            <MenuItem value="totalSupply">{t('common.totalSupply', 'Total supply')}</MenuItem>
+            <MenuItem value="supplyApy">{t('common.supplyApy', 'Supply APY')}</MenuItem>
+            <MenuItem value="availableLiquidity">{t('common.liquidity', 'Liquidity')}</MenuItem>
+            <MenuItem value="utilization">{t('common.utilization', 'Utilization')}</MenuItem>
+            <MenuItem value="name">{t('common.name', 'Name')}</MenuItem>
           </Select>
         </Grid>
         <Grid size={{ xs: 6, md: 1.7 }}>
@@ -441,10 +463,11 @@ export default function LendPage() {
             renderTags={(value, getTagProps) =>
               value.map((option, index) => <Chip label={option} {...getTagProps({ index })} size="small" />)
             }
+            slotProps={{ popupIndicator: { 'aria-label': t('common.showRiskManagerOptions', 'Show risk manager options') } }}
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Risk manager"
+                label={t('common.riskManager', 'Risk manager')}
                 slotProps={{
                   input: {
                     ...params.InputProps,
@@ -470,10 +493,11 @@ export default function LendPage() {
             renderTags={(value, getTagProps) =>
               value.map((option, index) => <Chip label={option} {...getTagProps({ index })} size="small" />)
             }
+            slotProps={{ popupIndicator: { 'aria-label': t('lend.showMarketOptions', 'Show market options') } }}
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Market"
+                label={t('common.market', 'Market')}
                 slotProps={{
                   input: {
                     ...params.InputProps,
@@ -499,10 +523,11 @@ export default function LendPage() {
             renderTags={(value, getTagProps) =>
               value.map((option, index) => <Chip label={option} {...getTagProps({ index })} size="small" />)
             }
+            slotProps={{ popupIndicator: { 'aria-label': t('common.showAssetOptions', 'Show asset options') } }}
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Asset"
+                label={t('common.asset', 'Asset')}
                 slotProps={{
                   input: {
                     ...params.InputProps,
@@ -524,15 +549,18 @@ export default function LendPage() {
             size="small"
             startIcon={<AddIcon />}
             onClick={() => setShowExposureFilter((value) => !value)}
+            aria-label={t('lend.filterByExposure', 'Filter by current exposure')}
+            aria-expanded={showExposureFilter}
+            aria-controls={showExposureFilter ? EXPOSURE_FILTER_ID : undefined}
             sx={{ height: 40, whiteSpace: 'nowrap', paddingX: 0.75 }}
           >
-            Filter
+            {t('common.filter', 'Filter')}
           </Button>
         </Grid>
       </Grid>
 
       {showExposureFilter && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 2.5 }}>
+        <Box id={EXPOSURE_FILTER_ID} sx={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 2.5 }}>
           <Autocomplete
             multiple
             size="small"
@@ -543,178 +571,206 @@ export default function LendPage() {
             renderTags={(value, getTagProps) =>
               value.map((option, index) => <Chip label={option} {...getTagProps({ index })} size="small" />)
             }
-            renderInput={(params) => <TextField {...params} label="Current exposure" />}
+            slotProps={{ popupIndicator: { 'aria-label': t('common.showExposureOptions', 'Show current exposure options') } }}
+            renderInput={(params) => <TextField {...params} label={t('common.currentExposure', 'Current exposure')} />}
           />
         </Box>
       )}
 
       {cards.length > 0 && failedChains.length > 0 && (
         <Alert severity="warning" variant="outlined" sx={{ marginBottom: 1.25 }}>
-          Some networks failed to load ({failedChainLabels}). Showing available lending vaults.
+          {t('lend.partialFailure', 'Some networks failed to load ({chains}). Showing available lending vaults.', {
+            chains: failedChainLabels
+          })}
         </Alert>
       )}
 
       {loading && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', padding: 7 }}>
-          <CircularProgress />
+        <Box role="status" aria-live="polite" sx={{ display: 'flex', justifyContent: 'center', padding: 7 }}>
+          <CircularProgress aria-label={t('lend.loading', 'Loading lending vaults')} />
         </Box>
       )}
 
       {fullFailure && (
         <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-          <Typography color="error">Failed to load Euler Lend data for {failedChainLabels}.</Typography>
+          <Typography color="error">
+            {t('lend.loadFailed', 'Failed to load Euler Lend data for {chains}.', { chains: failedChainLabels })}
+          </Typography>
           <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginTop: 1 }}>
-            Product labels and EVK metrics come directly from the configured public Euler endpoints.
+            {t('common.evkDataSourceHint', 'Product labels and EVK metrics come directly from the configured public Euler endpoints.')}
           </Typography>
         </Paper>
       )}
 
       {!loading && !fullFailure && visibleCards.length === 0 && (
-        <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
-          <Typography>No lending vaults match the current filters.</Typography>
+        <Paper role="status" sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
+          <Typography>{t('lend.empty', 'No lending vaults match the current filters.')}</Typography>
         </Paper>
       )}
 
       {!loading && !fullFailure && (
-        <Stack spacing={1.25}>
+        <Stack
+          component="ul"
+          spacing={1.25}
+          aria-label={t('lend.listLabel', 'Lending vaults')}
+          sx={{ listStyle: 'none', margin: 0, padding: 0 }}
+        >
           {visibleCards.map((vault) => (
-            <Paper
-              component="article"
-              key={`${vault.chainId}:${vault.address.toLowerCase()}`}
-              onClick={() => navigate(`/lend/${vault.address}?network=${vault.chainId}`)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  navigate(`/lend/${vault.address}?network=${vault.chainId}`);
-                }
-              }}
-              role="link"
-              tabIndex={0}
-              sx={{
-                padding: 0,
-                overflow: 'hidden',
-                border: `1px solid ${theme.palette.divider}`,
-                borderRadius: 1,
-                cursor: 'pointer',
-                '&:hover': { borderColor: theme.palette.secondary.main },
-                '&:focus-visible': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: 2 }
-              }}
-            >
-              <Box
+            <Box component="li" key={`${vault.chainId}:${vault.address.toLowerCase()}`}>
+              <Paper
+                aria-label={t('lend.card.open', 'Open lending vault {symbol} in {market} on {network}, supply APY {apy}%', {
+                  symbol: vault.assetSymbol,
+                  market: vault.marketName,
+                  network: getChainName(vault.chainId),
+                  apy: vault.supplyApy.toFixed(2)
+                })}
+                onClick={() => navigate(`/lend/${vault.address}?network=${vault.chainId}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    navigate(`/lend/${vault.address}?network=${vault.chainId}`);
+                  }
+                }}
+                role="link"
+                tabIndex={0}
                 sx={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 1.5,
-                  padding: 2,
-                  borderBottom: `1px solid ${theme.palette.divider}`
+                  padding: 0,
+                  overflow: 'hidden',
+                  border: `1px solid ${theme.palette.divider}`,
+                  borderRadius: 1,
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: theme.palette.secondary.main },
+                  '&:focus-visible': { outline: `2px solid ${theme.palette.secondary.main}`, outlineOffset: 2 }
                 }}
               >
-                <TokenIcon
-                  symbol={vault.assetSymbol}
-                  logoUrl={tokenImageUrl(vault.chainId, vault.assetAddress)}
-                  avatarProps={{ sx: { width: 40, height: 40, fontSize: 12 } }}
-                />
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, marginBottom: 0.25 }}>
-                    <Typography variant="body2" sx={{ color: theme.palette.grey[500], overflowWrap: 'anywhere' }}>
-                      {vault.name}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 1.5,
+                    padding: 2,
+                    borderBottom: `1px solid ${theme.palette.divider}`
+                  }}
+                >
+                  <TokenIcon
+                    symbol={vault.assetSymbol}
+                    logoUrl={tokenImageUrl(vault.chainId, vault.assetAddress)}
+                    avatarProps={{ sx: { width: 40, height: 40, fontSize: 12 } }}
+                  />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, marginBottom: 0.25 }}>
+                      <Typography variant="body2" sx={{ color: theme.palette.grey[500], overflowWrap: 'anywhere' }}>
+                        {vault.name}
+                      </Typography>
+                      <ChainBadge chainId={vault.chainId} />
+                      {vault.recentlyAdded && (
+                        <Chip
+                          icon={<StarOutlineIcon />}
+                          label={t('common.recentlyAdded', 'Recently added')}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                          sx={{ height: 22, display: { xs: 'none', sm: 'inline-flex' } }}
+                        />
+                      )}
+                      {vault.privateMarket && (
+                        <Chip
+                          icon={<LockOutlinedIcon />}
+                          label={t('common.private', 'Private')}
+                          size="small"
+                          variant="outlined"
+                          sx={{ height: 22 }}
+                        />
+                      )}
+                    </Box>
+                    <Typography variant="h3" component="h2">
+                      {vault.assetSymbol}
                     </Typography>
-                    <ChainBadge chainId={vault.chainId} />
-                    {vault.recentlyAdded && (
-                      <Chip
-                        icon={<StarOutlineIcon />}
-                        label="Recently added"
-                        size="small"
-                        color="secondary"
-                        variant="outlined"
-                        sx={{ height: 22, display: { xs: 'none', sm: 'inline-flex' } }}
-                      />
-                    )}
-                    {vault.privateMarket && (
-                      <Chip icon={<LockOutlinedIcon />} label="Private" size="small" variant="outlined" sx={{ height: 22 }} />
-                    )}
                   </Box>
-                  <Typography variant="h3">{vault.assetSymbol}</Typography>
+                  <Box sx={{ flexShrink: 0, textAlign: 'right', marginLeft: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                      {vault.recentlyAdded && (
+                        <StarOutlineIcon sx={{ display: { xs: 'block', sm: 'none' }, fontSize: 16, color: 'secondary.main' }} />
+                      )}
+                      <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
+                        {t('common.supplyApy', 'Supply APY')}
+                      </Typography>
+                      <Tooltip title={t('lend.supplyApyHint', 'Base supply APY plus intrinsic yield and active rewards')} arrow>
+                        <InfoOutlinedIcon sx={{ fontSize: 14, color: theme.palette.grey[600] }} />
+                      </Tooltip>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, marginTop: 0.25 }}>
+                      {vault.rewardApy > 0 && <AutoAwesomeIcon sx={{ fontSize: 16, color: theme.palette.secondary.main }} />}
+                      <Typography variant="h4" component="p" sx={{ color: theme.palette.secondary.main }}>
+                        {vault.supplyApy.toFixed(2)}%
+                      </Typography>
+                    </Box>
+                  </Box>
                 </Box>
-                <Box sx={{ flexShrink: 0, textAlign: 'right', marginLeft: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                    {vault.recentlyAdded && (
-                      <StarOutlineIcon sx={{ display: { xs: 'block', sm: 'none' }, fontSize: 16, color: 'secondary.main' }} />
-                    )}
-                    <Typography variant="body2" sx={{ color: theme.palette.grey[500] }}>
-                      Supply APY
-                    </Typography>
-                    <Tooltip title="Base supply APY plus intrinsic yield and active rewards" arrow>
-                      <InfoOutlinedIcon sx={{ fontSize: 14, color: theme.palette.grey[600] }} />
-                    </Tooltip>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, marginTop: 0.25 }}>
-                    {vault.rewardApy > 0 && <AutoAwesomeIcon sx={{ fontSize: 16, color: theme.palette.secondary.main }} />}
-                    <Typography variant="h4" sx={{ color: theme.palette.secondary.main }}>
-                      {vault.supplyApy.toFixed(2)}%
-                    </Typography>
-                  </Box>
-                </Box>
-              </Box>
 
-              <Grid container spacing={2} sx={{ padding: 2 }} alignItems="center">
-                <Grid size={{ xs: 6, md: 2.5 }} sx={{ order: { xs: 3, md: 1 } }}>
-                  <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
-                    Risk manager
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-                    <Avatar src={vault.riskManagerLogo} alt={vault.riskManagerName} sx={{ width: 22, height: 22, fontSize: 10 }}>
-                      {vault.riskManagerName === '-' ? '-' : vault.riskManagerName.slice(0, 1)}
-                    </Avatar>
-                    <Typography variant="body1" noWrap>
-                      {vault.riskManagerName}
+                <Grid container spacing={2} sx={{ padding: 2 }} alignItems="center">
+                  <Grid size={{ xs: 6, md: 2.5 }} sx={{ order: { xs: 3, md: 1 } }}>
+                    <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
+                      {t('common.riskManager', 'Risk manager')}
                     </Typography>
-                  </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+                      <Avatar src={vault.riskManagerLogo} alt="" aria-hidden="true" sx={{ width: 22, height: 22, fontSize: 10 }}>
+                        {vault.riskManagerName === '-' ? '-' : vault.riskManagerName.slice(0, 1)}
+                      </Avatar>
+                      <Typography variant="body1" noWrap>
+                        {vault.riskManagerName}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid size={{ xs: 6, md: 2.2 }} sx={{ order: { xs: 1, md: 2 } }}>
+                    <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
+                      {t('common.totalSupply', 'Total supply')}
+                    </Typography>
+                    <Typography variant="body1">{formatUsd(vault.totalSupplyUsd)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 6, md: 2.3 }} sx={{ order: { xs: 2, md: 3 }, textAlign: { xs: 'right', md: 'left' } }}>
+                    <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
+                      {t('common.availableLiquidity', 'Available liquidity')}
+                    </Typography>
+                    <Typography variant="body1">{formatUsd(vault.availableLiquidityUsd)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 6, md: 2 }} sx={{ order: { xs: 4, md: 4 } }}>
+                    <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
+                      {t('common.utilization', 'Utilization')}
+                    </Typography>
+                    <UtilizationValue value={vault.utilization} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 3 }} sx={{ order: 5, textAlign: { md: 'right' } }}>
+                    <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
+                      {t('common.currentExposure', 'Current exposure')}
+                    </Typography>
+                    {vault.exposures.length > 0 ? (
+                      <AvatarGroup
+                        max={5}
+                        role="group"
+                        aria-label={t('common.currentExposureList', 'Current exposure: {assets}', {
+                          assets: vault.exposures.map((exposure) => exposure.symbol).join(', ')
+                        })}
+                        sx={{
+                          justifyContent: { xs: 'flex-start', md: 'flex-end' },
+                          '& .MuiAvatar-root': { width: 24, height: 24, fontSize: 8, border: `1px solid ${theme.palette.divider}` }
+                        }}
+                      >
+                        {vault.exposures.map((exposure) => (
+                          <Tooltip key={`${vault.chainId}:${exposure.address.toLowerCase()}`} title={exposure.symbol} arrow>
+                            <Avatar src={tokenImageUrl(vault.chainId, exposure.address)} alt={exposure.symbol}>
+                              {exposure.symbol.slice(0, 2)}
+                            </Avatar>
+                          </Tooltip>
+                        ))}
+                      </AvatarGroup>
+                    ) : (
+                      <Typography>-</Typography>
+                    )}
+                  </Grid>
                 </Grid>
-                <Grid size={{ xs: 6, md: 2.2 }} sx={{ order: { xs: 1, md: 2 } }}>
-                  <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
-                    Total supply
-                  </Typography>
-                  <Typography variant="body1">{formatUsd(vault.totalSupplyUsd)}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6, md: 2.3 }} sx={{ order: { xs: 2, md: 3 }, textAlign: { xs: 'right', md: 'left' } }}>
-                  <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
-                    Available liquidity
-                  </Typography>
-                  <Typography variant="body1">{formatUsd(vault.availableLiquidityUsd)}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6, md: 2 }} sx={{ order: { xs: 4, md: 4 } }}>
-                  <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
-                    Utilization
-                  </Typography>
-                  <UtilizationValue value={vault.utilization} />
-                </Grid>
-                <Grid size={{ xs: 12, md: 3 }} sx={{ order: 5, textAlign: { md: 'right' } }}>
-                  <Typography variant="body2" sx={{ color: theme.palette.grey[500], marginBottom: 0.5 }}>
-                    Current exposure
-                  </Typography>
-                  {vault.exposures.length > 0 ? (
-                    <AvatarGroup
-                      max={5}
-                      sx={{
-                        justifyContent: { xs: 'flex-start', md: 'flex-end' },
-                        '& .MuiAvatar-root': { width: 24, height: 24, fontSize: 8, border: `1px solid ${theme.palette.divider}` }
-                      }}
-                    >
-                      {vault.exposures.map((exposure) => (
-                        <Tooltip key={`${vault.chainId}:${exposure.address.toLowerCase()}`} title={exposure.symbol} arrow>
-                          <Avatar src={tokenImageUrl(vault.chainId, exposure.address)} alt={exposure.symbol}>
-                            {exposure.symbol.slice(0, 2)}
-                          </Avatar>
-                        </Tooltip>
-                      ))}
-                    </AvatarGroup>
-                  ) : (
-                    <Typography>-</Typography>
-                  )}
-                </Grid>
-              </Grid>
-            </Paper>
+              </Paper>
+            </Box>
           ))}
         </Stack>
       )}

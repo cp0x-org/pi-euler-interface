@@ -7,6 +7,7 @@ import { useTheme } from '@mui/material/styles';
 import { dispatchSuccess } from 'utils/snackbar';
 import { TokenIcon } from 'components/TokenIcon';
 import { CustomInput } from 'components/CustomInput';
+import useTranslate from 'hooks/useTranslate';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
 
 interface MockActionFormProps {
@@ -32,6 +33,7 @@ export const MockActionForm: FC<MockActionFormProps> = ({
   onAmountChange
 }) => {
   const theme = useTheme();
+  const t = useTranslate();
   const [inputAmount, setInputAmount] = useState('');
   const [activePercentage, setActivePercentage] = useState<number | null>(null);
 
@@ -64,7 +66,13 @@ export const MockActionForm: FC<MockActionFormProps> = ({
   const isButtonDisabled = !parsedAmount || parsedAmount <= 0 || parsedAmount > parseFloat(balance);
 
   const handleSubmit = () => {
-    dispatchSuccess(`Mock: ${actionLabel} ${inputAmount} ${assetSymbol} submitted`);
+    dispatchSuccess(
+      t('market.mockSubmitted', 'Mock: {action} {amount} {symbol} submitted', {
+        action: actionLabel,
+        amount: inputAmount,
+        symbol: assetSymbol
+      })
+    );
     setInputAmount('');
     setActivePercentage(null);
     emitAmount('');
@@ -147,7 +155,7 @@ export const MockActionForm: FC<MockActionFormProps> = ({
                 color: activePercentage === percent ? theme.palette.background.paper : 'inherit'
               }}
             >
-              {percent === 100 ? 'Max' : `${percent}%`}
+              {percent === 100 ? t('common.max', 'Max') : `${percent}%`}
             </Button>
           ))}
         </Box>
@@ -175,7 +183,7 @@ export const MockActionForm: FC<MockActionFormProps> = ({
           }}
         >
           <Typography variant="h4" fontWeight="normal">
-            Balance:
+            {t('market.balanceLabel', 'Balance:')}
           </Typography>
           <Typography variant="h4" fontWeight="normal">
             {Number(balance).toFixed(6)} {assetSymbol}

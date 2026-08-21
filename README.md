@@ -1,3 +1,5 @@
+Languages: [English](./README.md) | [中文](./README_CH.md)
+
 # Permissionless Euler Interface by cp0x
 
 A permissionless interface for the Euler protocol, built on the Berry MUI template (React 19 + Vite + MUI 7) with wallet connectivity (wagmi + RainbowKit).
@@ -10,6 +12,18 @@ The `/explore`, `/earn`, `/lend`, `/borrow`, and `/portfolio` pages mirror their
 - MUI 7 (Berry template: theme, layout, ui-components)
 - wagmi + viem + RainbowKit (wallet connection, chain switching)
 - @tanstack/react-query (Euler API data), Redux Toolkit (snackbar), notistack
+
+## Languages
+
+The interface ships in English and Simplified Chinese. The language dropdown sits in the top-right of the header, right
+before the Connect Wallet button. English is the default; the chosen language is stored in the browser's localStorage and
+survives a reload.
+
+- Message catalogues: `src/utils/locales/en.json` and `src/utils/locales/zh.json`
+- i18n runtime: `react-intl` (`IntlProvider` in `src/ui-component/Locales.tsx`)
+- Usage in components: `src/hooks/useTranslate.ts`
+
+When adding UI copy, add the same key to both catalogues.
 
 ## Runtime configuration
 

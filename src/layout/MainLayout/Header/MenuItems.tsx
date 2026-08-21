@@ -4,6 +4,9 @@ import { Link as RouterLink } from 'react-router-dom';
 // material-ui
 import { Box, Button, Stack, Theme, useMediaQuery, useTheme } from '@mui/material';
 
+// project imports
+import useTranslate from 'hooks/useTranslate';
+
 // Menu button styling as an object for reuse
 const menuButtonStyle = (theme: Theme) => ({
   color: theme.palette.text.primary,
@@ -20,26 +23,33 @@ const menuButtonStyle = (theme: Theme) => ({
 
 const MenuItems = () => {
   const theme = useTheme();
+  const t = useTranslate();
   const matchDownMd = useMediaQuery(theme.breakpoints.down('md'));
 
   if (matchDownMd) return null;
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
-      <Stack direction="row" spacing={1}>
+    <Box component="nav" aria-label={t('site.linksLabel', 'cp0x site links')} sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
+      <Stack component="ul" direction="row" spacing={1} sx={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {/* Internal link using RouterLink */}
-        <Button component={RouterLink} to="/" sx={menuButtonStyle(theme)}>
-          Home
-        </Button>
+        <Box component="li" sx={{ display: 'flex' }}>
+          <Button component={RouterLink} to="/" sx={menuButtonStyle(theme)}>
+            {t('site.home', 'Home')}
+          </Button>
+        </Box>
 
         {/* External links using anchor tags */}
-        <Button href="https://pi.cp0x.com" rel="noopener noreferrer" sx={menuButtonStyle(theme)}>
-          Permissionless Interfaces
-        </Button>
+        <Box component="li" sx={{ display: 'flex' }}>
+          <Button href="https://pi.cp0x.com" rel="noopener noreferrer" sx={menuButtonStyle(theme)}>
+            {t('site.permissionlessInterfaces', 'Permissionless Interfaces')}
+          </Button>
+        </Box>
 
-        <Button href="https://cp0x.com" target="_blank" rel="noopener noreferrer" sx={menuButtonStyle(theme)}>
-          cp0x Referrals
-        </Button>
+        <Box component="li" sx={{ display: 'flex' }}>
+          <Button href="https://cp0x.com" target="_blank" rel="noopener noreferrer" sx={menuButtonStyle(theme)}>
+            {t('site.referrals', 'cp0x Referrals')}
+          </Button>
+        </Box>
       </Stack>
     </Box>
   );
