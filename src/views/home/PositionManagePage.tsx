@@ -31,6 +31,7 @@ import RepayForm from 'components/RepayForm';
 import VaultActionForm from 'components/VaultActionForm';
 import ConnectButtonCustom from 'components/ConnectButtonCustom';
 import { TokenIcon } from 'components/TokenIcon';
+import YieldBreakdownInfo from 'components/YieldBreakdownInfo';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
 import useTranslate from 'hooks/useTranslate';
 import { formatShortUSDS } from 'utils/formatters';
@@ -43,6 +44,9 @@ function fmtUsd(value: number): string {
   if (!Number.isFinite(value)) return '—';
   if (value > 0 && value < 0.01) return '<$0.01';
   return `$${formatShortUSDS(value)}`;
+}
+function fmtPct(value?: number): string {
+  return Number.isFinite(value) ? `${(value as number).toFixed(2)}%` : '—';
 }
 function fixed1e18(value?: string): number {
   if (!value) return 0;
@@ -116,15 +120,17 @@ export default function PositionManagePage() {
   const collateralVault = vaultsQuery.data?.data?.find((vault) => vault.address.toLowerCase() === collateral.toLowerCase());
   const collateralConfig = borrowVault?.collaterals?.find((item) => item.collateral.toLowerCase() === collateral.toLowerCase());
 
-  const position = useMemo(
-    () =>
-      portfolioQuery.data?.data?.portfolio?.borrows?.find(
-        (entry) =>
-          entry.borrowVault.address.toLowerCase() === liability.toLowerCase() &&
-          entry.collateralVault.address.toLowerCase() === collateral.toLowerCase()
-      ),
-    [portfolioQuery.data, collateral, liability]
-  );
+  // The same (collateral, liability) pair can be open on several sub-accounts, so the row that
+  // linked here passes its own `sub`; without it fall back to the first match.
+  const subAccount = params.get('sub');
+  const position = useMemo(() => {
+    const matches = (portfolioQuery.data?.data?.portfolio?.borrows ?? []).filter(
+      (entry) =>
+        entry.borrowVault.address.toLowerCase() === liability.toLowerCase() &&
+        entry.collateralVault.address.toLowerCase() === collateral.toLowerCase()
+    );
+    return matches.find((entry) => entry.subAccount?.toLowerCase() === subAccount?.toLowerCase()) ?? matches[0];
+  }, [portfolioQuery.data, collateral, liability, subAccount]);
 
   const hasCollateralAsset = Boolean(position?.collateralVault.asset) || Boolean(collateralConfig?.asset) || Boolean(collateralVault);
   const resolvedCollateralQuery = useQuery({
@@ -212,6 +218,9 @@ export default function PositionManagePage() {
 
   const hf = fixed1e18(position?.healthFactor);
   const currentLtv = fixed1e18(position?.currentLTV) * 100;
+  // `roe` is the API's return on equity (netApy x leverage); fall back to the gross net APY when absent.
+  const positionRoe = Number.isFinite(position?.roe) ? (position?.roe as number) : (position?.netApy ?? 0);
+  const positionLeverage = Number.isFinite(position?.multiplier) ? `${(position?.multiplier as number).toFixed(2)}x` : '—';
 
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
@@ -262,9 +271,45 @@ export default function PositionManagePage() {
                       {Number.isFinite(hf) && hf > 0 ? hf.toFixed(2) : '∞'}
                     </Box>
                   </Overview>
-                  <Overview label={t('common.netApy', 'Net APY')}>
+                  <Overview
+                    label={t('common.netApy', 'Net APY')}
+                    info={<YieldBreakdownInfo kind="apy" breakdown={position.apyBreakdown} total={position.netApy} />}
+                    caption={t('position.onSuppliedCollateral', 'On {value} of supplied collateral', {
+                      value: fmtUsd(position.totalCollateralValueUsd)
+                    })}
+                  >
                     <Box component="span" sx={{ color: position.netApy >= 0 ? theme.palette.success.main : theme.palette.error.main }}>
-                      {position.netApy.toFixed(2)}%
+                      {fmtPct(position.netApy)}
+                    </Box>
+                  </Overview>
+                  <Overview
+                    label={t('common.roe', 'ROE')}
+                    info={
+                      <YieldBreakdownInfo
+                        kind="roe"
+                        breakdown={position.roeBreakdown}
+                        total={positionRoe}
+                        leadRows={[
+                          {
+                            label: t('yield.yourLtv', 'Your LTV'),
+                            caption: t('yield.yourLtvCaption', 'Current loan-to-value ratio'),
+                            value: `${currentLtv.toFixed(2)}%`
+                          },
+                          {
+                            label: t('yield.multiplier', 'Multiplier'),
+                            caption: t('yield.multiplierCaption', 'Effective multiplier at your LTV'),
+                            value: positionLeverage
+                          }
+                        ]}
+                      />
+                    }
+                    caption={t('position.leverageCaption', '{value} leverage on {equity} of equity', {
+                      value: positionLeverage,
+                      equity: fmtUsd(position.totalCollateralValueUsd - position.liabilityValueUsd)
+                    })}
+                  >
+                    <Box component="span" sx={{ color: positionRoe >= 0 ? theme.palette.success.main : theme.palette.error.main }}>
+                      {fmtPct(positionRoe)}
                     </Box>
                   </Overview>
                   <Overview label={t('position.currentLtv', 'Current LTV')}>
@@ -279,6 +324,14 @@ export default function PositionManagePage() {
                       : '—'}
                   </Overview>
                 </Grid>
+              ) : portfolioQuery.isPending ? (
+                <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 120 }}>
+                  <CircularProgress size={28} aria-label={t('position.loadingPosition', 'Loading your position')} />
+                </Box>
+              ) : portfolioQuery.isError ? (
+                <Alert severity="warning">
+                  {t('position.loadFailed', 'Your position could not be loaded. Retry in a moment — market data below is unaffected.')}
+                </Alert>
               ) : (
                 <Alert severity="info">
                   {t(
@@ -429,15 +482,33 @@ export default function PositionManagePage() {
   );
 }
 
-function Overview({ label, children }: { label: string; children: React.ReactNode }) {
+function Overview({
+  label,
+  children,
+  info,
+  caption
+}: {
+  label: string;
+  children: React.ReactNode;
+  info?: React.ReactNode;
+  caption?: string;
+}) {
   return (
     <Grid size={{ xs: 6 }}>
-      <Typography color="text.secondary" variant="body2">
-        {label}
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Typography color="text.secondary" variant="body2">
+          {label}
+        </Typography>
+        {info}
+      </Box>
       <Typography variant="h4" component="div" sx={{ marginTop: 0.25 }}>
         {children}
       </Typography>
+      {caption && (
+        <Typography variant="caption" color="text.secondary">
+          {caption}
+        </Typography>
+      )}
     </Grid>
   );
 }

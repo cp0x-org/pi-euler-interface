@@ -303,11 +303,28 @@ export default function componentStyleOverrides(theme: Theme, borderRadius: numb
     },
     MuiTooltip: {
       styleOverrides: {
+        // Dark mode kept the light-theme recipe (text colour as the background), which rendered
+        // tooltips as a pale panel with barely readable text. Dark tooltips now use the app's own
+        // surface colour, text colour and divider border instead.
         tooltip: {
           margin: 0,
           lineHeight: 1.4,
-          color: theme.palette.background.paper,
-          background: theme.palette.text.primary
+          fontSize: '0.75rem',
+          padding: '10px 12px',
+          maxWidth: 320,
+          borderRadius: `${borderRadius}px`,
+          color: mode === ThemeMode.DARK ? theme.palette.text.primary : theme.palette.background.paper,
+          background: mode === ThemeMode.DARK ? theme.palette.background.default : theme.palette.text.primary,
+          ...(mode === ThemeMode.DARK && {
+            border: `1px solid ${theme.palette.divider}`,
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)'
+          })
+        },
+        arrow: {
+          color: mode === ThemeMode.DARK ? theme.palette.background.default : theme.palette.text.primary,
+          ...(mode === ThemeMode.DARK && {
+            '&::before': { border: `1px solid ${theme.palette.divider}` }
+          })
         }
       }
     },

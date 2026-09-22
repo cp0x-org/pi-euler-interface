@@ -164,9 +164,13 @@ export const fetchRewardApys = (chainId: number, offset = 0, limit = 100) =>
 
 // GET https://v3.euler.finance/v3/accounts/{address}/portfolio?chainId=N — the connected
 // account's holdings: borrow positions, Earn/Lend deposits and portfolio totals in one call.
-export const fetchAccountPortfolio = (chainId: number, address: string) =>
+// Without `forceFresh` the endpoint answers from a snapshot cache that can be hours old
+// (`data.freshness.mode = 'cached'`), which makes balances and the net asset value drift away from
+// the official app. Asking for a fresh snapshot is cheap: the backend recomputes at most once per
+// short interval and falls back to the cache when rate-limited.
+export const fetchAccountPortfolio = (chainId: number, address: string, forceFresh = true) =>
   getV3Json<{ data: EulerAccountPortfolio; meta: { timestamp: string; chainId: string } }>(
-    `/v3/accounts/${address}/portfolio?chainId=${chainId}`
+    `/v3/accounts/${address}/portfolio?chainId=${chainId}${forceFresh ? '&forceFresh=true' : ''}`
   );
 
 // JSON-RPC against the chain RPC from runtime config (the Euler app proxies

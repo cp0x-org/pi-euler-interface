@@ -13,9 +13,10 @@ import ChainFilter, { ChainFilterValue } from 'components/ChainFilter';
 import { ChainBadge } from 'components/ChainIcon';
 import ConnectButtonCustom from 'components/ConnectButtonCustom';
 import { TokenIcon } from 'components/TokenIcon';
+import YieldBreakdownInfo from 'components/YieldBreakdownInfo';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
 import useTranslate from 'hooks/useTranslate';
-import { EulerBorrowPosition, EulerDepositPosition } from 'types/euler';
+import { EulerApyBreakdown, EulerBorrowPosition, EulerDepositPosition } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
 
 type ChainedBorrowPosition = EulerBorrowPosition & { chainId: number };
@@ -25,6 +26,24 @@ function fmtUsd(value: number): string {
   if (!Number.isFinite(value)) return '—';
   if (value > 0 && value < 0.01) return '<$0.01';
   return `$${formatShortUSDS(value)}`;
+}
+function fmtPct(value: number | undefined): string {
+  return Number.isFinite(value) ? `${(value as number).toFixed(2)}%` : '—';
+}
+const BREAKDOWN_COMPONENTS = ['lending', 'borrowing', 'rewards', 'intrinsicApy', 'total'] as const;
+const emptyBreakdown = (): EulerApyBreakdown => ({ lending: 0, borrowing: 0, rewards: 0, intrinsicApy: 0, total: 0 });
+// Component-wise weighted sum, so the tooltip breakdown adds up to the aggregated headline figure.
+function addWeightedBreakdown(target: EulerApyBreakdown, breakdown: EulerApyBreakdown | undefined, weight: number): EulerApyBreakdown {
+  if (!breakdown) return target;
+  const sum = { ...target };
+  for (const key of BREAKDOWN_COMPONENTS) sum[key] += (Number.isFinite(breakdown[key]) ? breakdown[key] : 0) * weight;
+  return sum;
+}
+function divideBreakdown(breakdown: EulerApyBreakdown, weight: number): EulerApyBreakdown | undefined {
+  if (!(weight > 0)) return undefined;
+  const scaled = { ...breakdown };
+  for (const key of BREAKDOWN_COMPONENTS) scaled[key] /= weight;
+  return scaled;
 }
 function rawAmount(raw: string, decimals: number): number {
   try {
@@ -54,14 +73,14 @@ export default function PortfolioPage() {
   const [tab, setTab] = useState(0);
   const [chainFilter, setChainFilter] = useState<ChainFilterValue>('all');
 
+  // The cache entry for this key is shared with the position manager, so the query function must
+  // return the fetcher's payload as-is — wrapping it here made whichever page rendered second read
+  // the other one's shape (blank position / crash on back navigation).
   const portfolioQueries = useQueries({
     queries: chains.map((chain) => ({
       queryKey: ['euler', 'portfolio', chain.chainId, address],
       enabled: Boolean(address),
-      queryFn: async () => ({
-        chainId: chain.chainId,
-        response: await fetchAccountPortfolio(chain.chainId, address as string)
-      }),
+      queryFn: () => fetchAccountPortfolio(chain.chainId, address as string),
       refetchInterval: 30_000
     }))
   });
@@ -87,28 +106,47 @@ export default function PortfolioPage() {
       </Box>
     );
 
-  const selectedPortfolioQueries = portfolioQueries.filter((_, index) => chainFilter === 'all' || chains[index]?.chainId === chainFilter);
-  const successfulPortfolios = selectedPortfolioQueries.flatMap((query) => {
-    const data = query.data;
-    const portfolio = data?.response.data?.portfolio;
-    return data && portfolio ? [{ chainId: data.chainId, portfolio }] : [];
+  const selectedChainQueries = chains
+    .map((chain, index) => ({ chainId: chain.chainId, query: portfolioQueries[index] }))
+    .filter(({ chainId, query }) => query && (chainFilter === 'all' || chainId === chainFilter));
+  const successfulPortfolios = selectedChainQueries.flatMap(({ chainId, query }) => {
+    const portfolio = query?.data?.data?.portfolio;
+    return portfolio ? [{ chainId, portfolio }] : [];
   });
-  const failedQueryCount = selectedPortfolioQueries.filter((query) => query.isError).length;
+  const failedQueryCount = selectedChainQueries.filter(({ query }) => query?.isError).length;
 
   const totals = successfulPortfolios.reduce(
     (aggregate, { portfolio }) => {
       const suppliedValueUsd = portfolio.totals?.suppliedValueUsd ?? 0;
+      const netAssetValueUsd = portfolio.totals?.netAssetValueUsd ?? 0;
       const netApy = portfolio.totals?.netApy ?? 0;
+      // The API reports both: `netApy` on the gross supplied value, `roe` on the equity
+      // (supplied - borrowed). Each is averaged over the base it is earned on.
+      const roe = portfolio.totals?.roe ?? netApy;
       return {
         suppliedValueUsd: aggregate.suppliedValueUsd + suppliedValueUsd,
         borrowedValueUsd: aggregate.borrowedValueUsd + (portfolio.totals?.borrowedValueUsd ?? 0),
-        netAssetValueUsd: aggregate.netAssetValueUsd + (portfolio.totals?.netAssetValueUsd ?? 0),
-        weightedNetApy: aggregate.weightedNetApy + suppliedValueUsd * netApy
+        netAssetValueUsd: aggregate.netAssetValueUsd + netAssetValueUsd,
+        weightedNetApy: aggregate.weightedNetApy + suppliedValueUsd * netApy,
+        weightedRoe: aggregate.weightedRoe + netAssetValueUsd * roe,
+        weightedApyBreakdown: addWeightedBreakdown(aggregate.weightedApyBreakdown, portfolio.totals?.apyBreakdown, suppliedValueUsd),
+        weightedRoeBreakdown: addWeightedBreakdown(aggregate.weightedRoeBreakdown, portfolio.totals?.roeBreakdown, netAssetValueUsd)
       };
     },
-    { suppliedValueUsd: 0, borrowedValueUsd: 0, netAssetValueUsd: 0, weightedNetApy: 0 }
+    {
+      suppliedValueUsd: 0,
+      borrowedValueUsd: 0,
+      netAssetValueUsd: 0,
+      weightedNetApy: 0,
+      weightedRoe: 0,
+      weightedApyBreakdown: emptyBreakdown(),
+      weightedRoeBreakdown: emptyBreakdown()
+    }
   );
   const aggregateNetApy = totals.suppliedValueUsd > 0 ? totals.weightedNetApy / totals.suppliedValueUsd : 0;
+  const aggregateRoe = totals.netAssetValueUsd > 0 ? totals.weightedRoe / totals.netAssetValueUsd : aggregateNetApy;
+  const aggregateApyBreakdown = divideBreakdown(totals.weightedApyBreakdown, totals.suppliedValueUsd);
+  const aggregateRoeBreakdown = divideBreakdown(totals.weightedRoeBreakdown, totals.netAssetValueUsd);
   const borrows: ChainedBorrowPosition[] = successfulPortfolios.flatMap(({ chainId, portfolio }) =>
     (portfolio.borrows ?? []).map((position) => ({ ...position, chainId }))
   );
@@ -146,16 +184,31 @@ export default function PortfolioPage() {
         </Alert>
       )}
 
-      {/* Summary */}
+      {/* Summary — performance (Net APY + ROE) and value, like the official app */}
       <Grid container spacing={2} sx={{ marginBottom: 3 }}>
-        <SummaryStat label={t('portfolio.netWorth', 'Net worth')} value={fmtUsd(totals.netAssetValueUsd)} />
-        <SummaryStat label={t('portfolio.supplied', 'Supplied')} value={fmtUsd(totals.suppliedValueUsd)} />
-        <SummaryStat label={t('portfolio.borrowed', 'Borrowed')} value={fmtUsd(totals.borrowedValueUsd)} />
-        <SummaryStat
-          label={t('common.netApy', 'Net APY')}
-          value={`${aggregateNetApy.toFixed(2)}%`}
-          valueColor={aggregateNetApy >= 0 ? theme.palette.success.main : theme.palette.error.main}
-        />
+        <Grid size={{ xs: 12, md: 5 }}>
+          <SummaryPanel title={t('portfolio.performance', 'Portfolio performance')}>
+            <SummaryStat
+              label={t('common.netApy', 'Net APY')}
+              value={fmtPct(aggregateNetApy)}
+              valueColor={aggregateNetApy >= 0 ? theme.palette.success.main : theme.palette.error.main}
+              info={<YieldBreakdownInfo kind="apy" breakdown={aggregateApyBreakdown} total={aggregateNetApy} />}
+            />
+            <SummaryStat
+              label={t('common.roe', 'ROE')}
+              value={fmtPct(aggregateRoe)}
+              valueColor={aggregateRoe >= 0 ? theme.palette.success.main : theme.palette.error.main}
+              info={<YieldBreakdownInfo kind="roe" breakdown={aggregateRoeBreakdown} total={aggregateRoe} />}
+            />
+          </SummaryPanel>
+        </Grid>
+        <Grid size={{ xs: 12, md: 7 }}>
+          <SummaryPanel title={t('portfolio.value', 'Portfolio value')}>
+            <SummaryStat label={t('portfolio.totalSupplied', 'Total supplied')} value={fmtUsd(totals.suppliedValueUsd)} />
+            <SummaryStat label={t('portfolio.totalBorrowed', 'Total borrowed')} value={fmtUsd(totals.borrowedValueUsd)} />
+            <SummaryStat label={t('portfolio.netAssetValue', 'Net asset value')} value={fmtUsd(totals.netAssetValueUsd)} />
+          </SummaryPanel>
+        </Grid>
       </Grid>
 
       <Paper sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, overflow: 'hidden' }}>
@@ -181,7 +234,7 @@ export default function PortfolioPage() {
                     healthColor={healthColor}
                     onManage={() =>
                       navigate(
-                        `/portfolio/position/${position.collateralVault.address}/${position.borrowVault.address}?network=${position.chainId}`
+                        `/portfolio/position/${position.collateralVault.address}/${position.borrowVault.address}?network=${position.chainId}&sub=${position.subAccount}`
                       )
                     }
                   />
@@ -214,19 +267,33 @@ function depositHref(deposit: EulerDepositPosition, chainId: number, action: 'su
   return `${base}?network=${chainId}&action=${action}`;
 }
 
-function SummaryStat({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+function SummaryPanel({ title, children }: { title: string; children: React.ReactNode }) {
   const theme = useTheme();
   return (
-    <Grid size={{ xs: 6, md: 3 }}>
-      <Paper sx={{ padding: 2, border: `1px solid ${theme.palette.divider}`, borderRadius: 1, height: '100%' }}>
+    <Paper sx={{ padding: 2, border: `1px solid ${theme.palette.divider}`, borderRadius: 1, height: '100%' }}>
+      <Typography variant="body2" color="text.secondary" sx={{ marginBottom: 1.5 }}>
+        {title}
+      </Typography>
+      <Stack direction="row" spacing={{ xs: 3, sm: 5 }} flexWrap="wrap" useFlexGap>
+        {children}
+      </Stack>
+    </Paper>
+  );
+}
+
+function SummaryStat({ label, value, valueColor, info }: { label: string; value: string; valueColor?: string; info?: React.ReactNode }) {
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <Typography variant="body2" color="text.secondary">
           {label}
         </Typography>
-        <Typography variant="h3" sx={{ marginTop: 0.5, color: valueColor }}>
-          {value}
-        </Typography>
-      </Paper>
-    </Grid>
+        {info}
+      </Box>
+      <Typography variant="h3" sx={{ marginTop: 0.5, color: valueColor }}>
+        {value}
+      </Typography>
+    </Box>
   );
 }
 
@@ -246,6 +313,9 @@ function PositionRow({
   const hf = fixed1e18(position.healthFactor);
   const ltv = fixed1e18(position.currentLTV) * 100;
   const netValue = (position.totalCollateralValueUsd ?? 0) - (position.liabilityValueUsd ?? 0);
+  // `roe` is the API's return on equity (netApy x leverage); fall back to the gross net APY when absent.
+  const roe = Number.isFinite(position.roe) ? position.roe : (position.netApy ?? 0);
+  const leverage = Number.isFinite(position.multiplier) ? `${position.multiplier.toFixed(2)}x` : '—';
   return (
     <Paper
       variant="outlined"
@@ -260,7 +330,7 @@ function PositionRow({
       }}
     >
       <Grid container spacing={2} alignItems="center">
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, md: 3.4 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <TokenIcon
               symbol={collateral.asset.symbol}
@@ -277,7 +347,7 @@ function PositionRow({
               <Typography variant="h5" noWrap>
                 {collateral.asset.symbol} → {borrow.asset.symbol}
               </Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 {t('portfolio.borrowPosition', 'Borrow position')}
               </Typography>
               <ChainBadge
@@ -296,11 +366,37 @@ function PositionRow({
         />
         <Metric
           label={t('common.netApy', 'Net APY')}
-          value={`${(position.netApy ?? 0).toFixed(2)}%`}
+          value={fmtPct(position.netApy)}
           valueColor={(position.netApy ?? 0) >= 0 ? theme.palette.success.main : theme.palette.error.main}
+          info={<YieldBreakdownInfo kind="apy" breakdown={position.apyBreakdown} total={position.netApy} />}
           extra={t('common.ltvValue', 'LTV {value}%', { value: ltv.toFixed(1) })}
         />
-        <Grid size={{ xs: 12, md: 1 }} sx={{ textAlign: { md: 'right' } }}>
+        <Metric
+          label={t('common.roe', 'ROE')}
+          value={fmtPct(roe)}
+          valueColor={roe >= 0 ? theme.palette.success.main : theme.palette.error.main}
+          info={
+            <YieldBreakdownInfo
+              kind="roe"
+              breakdown={position.roeBreakdown}
+              total={roe}
+              leadRows={[
+                {
+                  label: t('yield.yourLtv', 'Your LTV'),
+                  caption: t('yield.yourLtvCaption', 'Current loan-to-value ratio'),
+                  value: `${ltv.toFixed(2)}%`
+                },
+                {
+                  label: t('yield.multiplier', 'Multiplier'),
+                  caption: t('yield.multiplierCaption', 'Effective multiplier at your LTV'),
+                  value: leverage
+                }
+              ]}
+            />
+          }
+          extra={t('portfolio.leverageShort', '{value} leverage', { value: leverage })}
+        />
+        <Grid size={{ xs: 12, md: 1.1 }} sx={{ textAlign: { md: 'right' } }}>
           <Button
             size="small"
             variant="outlined"
@@ -398,12 +494,27 @@ function DepositRow({ deposit, onSupply, onWithdraw }: { deposit: ChainedDeposit
   );
 }
 
-function Metric({ label, value, valueColor, extra }: { label: string; value: string; valueColor?: string; extra?: string }) {
+function Metric({
+  label,
+  value,
+  valueColor,
+  extra,
+  info
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  extra?: string;
+  info?: React.ReactNode;
+}) {
   return (
-    <Grid size={{ xs: 4, md: 2 }}>
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
+    <Grid size={{ xs: 6, sm: 4, md: 1.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Typography variant="body2" color="text.secondary" noWrap>
+          {label}
+        </Typography>
+        {info}
+      </Box>
       <Typography variant="h5" sx={{ color: valueColor }}>
         {value}
       </Typography>
