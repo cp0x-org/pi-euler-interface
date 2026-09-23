@@ -430,24 +430,35 @@ export interface EulerBorrowPosition {
   liabilityValueUsd: number;
   totalCollateralValueUsd: number;
   borrowLiquidationPriceUsd: number;
-  netApy: number;
-  roe: number;
-  multiplier: number;
+  netApy: number; // % earned on the supplied (gross) collateral value
+  roe: number; // % earned on the position's equity (collateral - debt) = netApy * multiplier
+  multiplier: number; // leverage: collateral value / equity
   apyBreakdown: EulerApyBreakdown;
+  roeBreakdown?: EulerApyBreakdown;
 }
 
 export interface EulerPortfolioTotals {
   suppliedValueUsd: number;
   borrowedValueUsd: number;
   netAssetValueUsd: number;
-  netApy: number;
-  roe: number;
+  netApy: number; // % on suppliedValueUsd (gross)
+  roe: number; // % on netAssetValueUsd (equity / net size)
   apyBreakdown: EulerApyBreakdown;
+  roeBreakdown?: EulerApyBreakdown;
+}
+
+// How recent the snapshot behind the payload is (see `fetchAccountPortfolio`).
+export interface EulerPortfolioFreshness {
+  mode: 'fresh' | 'cached' | string;
+  ageSeconds: number | null;
+  timestamp: string;
+  rateLimited?: boolean;
 }
 
 export interface EulerAccountPortfolio {
   chainId: number;
   owner: string;
+  freshness?: EulerPortfolioFreshness;
   portfolio: {
     savings: EulerDepositPosition[]; // all deposits (Earn + Lend)
     managedLending: EulerDepositPosition[]; // Earn (EulerEarn) deposits

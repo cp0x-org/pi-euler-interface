@@ -12,6 +12,7 @@ const APP_NAMESPACES = [
   'dashboard',
   'discovery',
   'earn',
+  'error',
   'earnForm',
   'explore',
   'footer',
@@ -26,7 +27,8 @@ const APP_NAMESPACES = [
   'repay',
   'site',
   'vaultDetail',
-  'wallet'
+  'wallet',
+  'yield'
 ];
 
 const english = en as Record<string, string>;

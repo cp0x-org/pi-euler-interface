@@ -1,4 +1,5 @@
 import MainLayout from 'layout/MainLayout';
+import ErrorBoundary from './ErrorBoundary';
 import { Navigate } from 'react-router';
 import EarnPage from 'views/home/EarnPage';
 import BorrowPage from 'views/home/BorrowPage';
@@ -17,6 +18,9 @@ import PositionManagePage from 'views/home/PositionManagePage';
 const MainRoutes = {
   path: '/',
   element: <MainLayout />,
+  // Inherited by every child route: a render error shows the app's own error card, not React
+  // Router's default stack-trace screen.
+  errorElement: <ErrorBoundary />,
   children: [
     {
       index: true,
