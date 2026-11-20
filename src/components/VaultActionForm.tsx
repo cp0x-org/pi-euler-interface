@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { Alert, Box, Button, CircularProgress, InputBase, Link, Paper, Stack, Typography, useTheme } from '@mui/material';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Address, BaseError, formatUnits, parseUnits } from 'viem';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Alert, Box, Button, CircularProgress, InputBase, Paper, Stack, Typography, useTheme } from '@mui/material';
+import { Address, BaseError, formatUnits, type Hash, parseUnits } from 'viem';
 import { useAccount, usePublicClient, useReadContract, useReadContracts, useSwitchChain, useWriteContract } from 'wagmi';
 
-import { ERC20_ABI, ERC4626_ABI } from '@/contracts/erc4626';
+import { ERC20_ABI, ERC4626_ABI, simulateTokenApproval } from '@/contracts/erc4626';
+import { EVAULT_ABI, EVC_ABI } from '@/contracts/evk';
+import TransactionLink from 'components/TransactionLink';
 import { TokenIcon } from 'components/TokenIcon';
 import useTranslate from 'hooks/useTranslate';
+import { withApprovalBuffer } from 'utils/repay';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
-import { dispatchError, dispatchSuccess } from 'utils/snackbar';
+import { dispatchError, dispatchSuccess, dispatchWarning } from 'utils/snackbar';
 
 // Generic ERC-4626 supply/withdraw form. Unlike EarnVaultActionForm (bound to EulerEarnVault) this
 // takes a minimal vault descriptor, so it drives both Lend vault deposits and add/remove collateral.
@@ -17,6 +20,10 @@ export type VaultActionMode = 'supply' | 'withdraw';
 
 interface VaultActionFormProps {
   mode: VaultActionMode;
+  targetAccount?: Address;
+  isOther?: boolean;
+  /** The position's liability vault identifies the connector that checks its collateral. */
+  liabilityVault?: Address;
   chainId: number;
   vaultAddress: Address;
   asset: { address: Address; symbol: string; decimals: number };
@@ -25,10 +32,10 @@ interface VaultActionFormProps {
   tokenLogoUrl: string;
   supplyLabel?: string; // e.g. the translated "Supply" (default) or "Add collateral"
   withdrawLabel?: string; // e.g. the translated "Withdraw" (default) or "Remove collateral"
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
 }
 
-type Step = 'idle' | 'resetting' | 'approving' | 'supplying' | 'withdrawing' | 'confirming';
+type Step = 'idle' | 'checkingCollateral' | 'resetting' | 'approving' | 'supplying' | 'withdrawing' | 'confirming';
 
 function rawText(value: bigint, decimals: number): string {
   return Number(formatUnits(value, decimals)).toLocaleString('en-US', { maximumFractionDigits: 6 });
@@ -42,6 +49,9 @@ function minBigInt(a: bigint, b: bigint): bigint {
 
 export default function VaultActionForm({
   mode,
+  targetAccount,
+  isOther = false,
+  liabilityVault,
   chainId,
   vaultAddress,
   asset,
@@ -58,22 +68,78 @@ export default function VaultActionForm({
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient({ chainId });
+  const queryClient = useQueryClient();
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');
+  const [maxSelected, setMaxSelected] = useState(false);
   const [step, setStep] = useState<Step>('idle');
-  const [hash, setHash] = useState<Address>();
+  const [hash, setHash] = useState<Hash>();
   const [message, setMessage] = useState('');
-  const [failed, setFailed] = useState(false);
+  const [severity, setSeverity] = useState<'error' | 'warning' | 'success'>('success');
 
   const actionVerb =
     mode === 'supply' ? (supplyLabel ?? t('common.supply', 'Supply')) : (withdrawLabel ?? t('common.withdraw', 'Withdraw'));
+  const receiver = mode === 'supply' ? (targetAccount ?? address) : address;
+  const showTargetShares = mode === 'supply' && !!targetAccount && targetAccount.toLowerCase() !== address?.toLowerCase();
+  const requiresCollateralCheck = mode === 'supply' && !!targetAccount;
+  const collateralKey = ['euler', 'position-collateral', chainId, liabilityVault, targetAccount, vaultAddress, isOther] as const;
+  const readCollateralStatus = async (blockNumber?: bigint) => {
+    if (!publicClient || !liabilityVault || !targetAccount) {
+      throw new Error(t('form.collateralCheckUnavailable', 'Could not verify collateral status on this network.'));
+    }
+    const block = blockNumber ?? (await publicClient.getBlockNumber({ cacheTime: 0 }));
+    const connector = await publicClient.readContract({
+      address: liabilityVault,
+      abi: EVAULT_ABI,
+      functionName: 'EVC',
+      blockNumber: block
+    });
+    const [enabled, controller, debt] = await Promise.all([
+      publicClient.readContract({
+        address: connector,
+        abi: EVC_ABI,
+        functionName: 'isCollateralEnabled',
+        args: [targetAccount, vaultAddress],
+        blockNumber: block
+      }),
+      isOther
+        ? publicClient.readContract({
+            address: connector,
+            abi: EVC_ABI,
+            functionName: 'isControllerEnabled',
+            args: [targetAccount, liabilityVault],
+            blockNumber: block
+          })
+        : true,
+      isOther
+        ? publicClient.readContract({
+            address: liabilityVault,
+            abi: EVAULT_ABI,
+            functionName: 'debtOf',
+            args: [targetAccount],
+            blockNumber: block
+          })
+        : undefined
+    ]);
+    return { enabled, open: controller && (debt === undefined || debt > 0n) };
+  };
+  const collateralStatus = useQuery({
+    queryKey: collateralKey,
+    enabled: requiresCollateralCheck && !!publicClient && !!liabilityVault,
+    queryFn: () => readCollateralStatus(),
+    refetchInterval: 15_000
+  });
+  const collateralBlocked =
+    requiresCollateralCheck && !(collateralStatus.isSuccess && collateralStatus.data.enabled && collateralStatus.data.open);
+  const collateralCheckUnavailable = !publicClient || !liabilityVault || collateralStatus.isError;
 
   useEffect(() => {
     setAmount('');
+    setMaxSelected(false);
     setHash(undefined);
     setMessage('');
-    setFailed(false);
+    setSeverity('success');
   }, [mode]);
 
   const reads = useReadContracts({
@@ -81,21 +147,34 @@ export default function VaultActionForm({
     contracts: address
       ? [
           { address: asset.address, abi: ERC20_ABI, functionName: 'balanceOf', args: [address], chainId },
-          { address: asset.address, abi: ERC20_ABI, functionName: 'allowance', args: [address, vaultAddress], chainId },
-          { address: vaultAddress, abi: ERC4626_ABI, functionName: 'maxDeposit', args: [address], chainId },
-          { address: vaultAddress, abi: ERC4626_ABI, functionName: 'maxWithdraw', args: [address], chainId },
-          { address: vaultAddress, abi: ERC4626_ABI, functionName: 'balanceOf', args: [address], chainId }
+          { address: asset.address, abi: ERC20_ABI, functionName: 'allowance', args: [address, vaultAddress], chainId }
         ]
       : [],
     query: { enabled: Boolean(address), refetchInterval: 15_000 }
   });
   const walletBalance = (reads.data?.[0]?.result as bigint | undefined) ?? 0n;
   const allowance = (reads.data?.[1]?.result as bigint | undefined) ?? 0n;
-  const maxDeposit = reads.data?.[2]?.result as bigint | undefined;
-  const maxWithdraw = (reads.data?.[3]?.result as bigint | undefined) ?? 0n;
-  const shareBalance = (reads.data?.[4]?.result as bigint | undefined) ?? 0n;
+  const vaultReads = useReadContracts({
+    allowFailure: true,
+    contracts: receiver
+      ? [
+          {
+            address: vaultAddress,
+            abi: ERC4626_ABI,
+            functionName: mode === 'supply' ? 'maxDeposit' : 'maxWithdraw',
+            args: [receiver],
+            chainId
+          },
+          { address: vaultAddress, abi: ERC4626_ABI, functionName: 'balanceOf', args: [receiver], chainId }
+        ]
+      : [],
+    query: { enabled: Boolean(receiver), refetchInterval: 15_000 }
+  });
+  const vaultLimit = vaultReads.data?.[0]?.result as bigint | undefined;
+  const targetShares = vaultReads.data?.[1]?.result as bigint | undefined;
+  const shareBalance = targetShares ?? 0n;
 
-  const supplyLimit = maxDeposit === undefined ? walletBalance : minBigInt(walletBalance, maxDeposit);
+  const supplyLimit = vaultLimit === undefined ? walletBalance : minBigInt(walletBalance, vaultLimit);
   // EVK vaults report maxWithdraw = 0 whenever the account has an enabled controller (an open
   // borrow) — even for unrelated deposits — because the vault can't evaluate the controller's
   // liquidity check in a view. Fall back to the account's full share value (convertToAssets) and let
@@ -109,7 +188,7 @@ export default function VaultActionForm({
     query: { enabled: mode === 'withdraw' && shareBalance > 0n }
   });
   const fullWithdrawable = (fullWithdrawableQuery.data as bigint | undefined) ?? 0n;
-  const available = mode === 'supply' ? supplyLimit : maxWithdraw > 0n ? maxWithdraw : fullWithdrawable;
+  const available = mode === 'supply' ? supplyLimit : vaultLimit || fullWithdrawable;
 
   const amountRaw = useMemo(() => {
     try {
@@ -135,44 +214,72 @@ export default function VaultActionForm({
   const exceeds = amountRaw > available;
   const needsApprove = mode === 'supply' && amountRaw > allowance;
 
-  const wait = async (txHash: Address) => {
+  const wait = async (txHash: Hash) => {
     if (!publicClient) throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
     setHash(txHash);
     setStep('confirming');
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
     if (receipt.status !== 'success') throw new Error(t('form.txReverted', 'Transaction reverted'));
+    return receipt;
   };
 
   const submit = async () => {
     if (!address) return openConnectModal?.();
     if (wrongNetwork) return switchChainAsync({ chainId });
-    if (!publicClient || amountRaw <= 0n || exceeds || busy) return;
+    if (!publicClient || !receiver || amountRaw <= 0n || exceeds || busy || collateralBlocked) return;
     setMessage('');
-    setFailed(false);
+    setSeverity('success');
     setHash(undefined);
     try {
+      let liveAllowance = allowance;
+      if (mode === 'supply') {
+        setStep(requiresCollateralCheck ? 'checkingCollateral' : 'supplying');
+        const [status, wallet, vault] = await Promise.all([
+          requiresCollateralCheck ? collateralStatus.refetch() : undefined,
+          reads.refetch(),
+          vaultReads.refetch()
+        ]);
+        if (status && (!status.isSuccess || !status.data.open || !status.data.enabled)) return;
+        const freshBalance = wallet.data?.[0]?.result;
+        const freshAllowance = wallet.data?.[1]?.result;
+        const freshLimit = vault.data?.[0]?.result;
+        if (
+          !wallet.isSuccess ||
+          !vault.isSuccess ||
+          typeof freshBalance !== 'bigint' ||
+          typeof freshAllowance !== 'bigint' ||
+          typeof freshLimit !== 'bigint'
+        ) {
+          throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
+        }
+        liveAllowance = freshAllowance;
+        const maximum = minBigInt(freshBalance, freshLimit);
+        if (maxSelected && amountRaw !== maximum) {
+          setAmount(inputFromRaw(maximum, asset.decimals));
+          return;
+        }
+        const requiresApproval = amountRaw > liveAllowance;
+        if (amountRaw > maximum || requiresApproval !== needsApprove) return;
+      }
+
       if (needsApprove) {
-        if (allowance > 0n) {
-          setStep('resetting');
-          const reset = await publicClient.simulateContract({
+        const approve = async (amount: bigint) => {
+          const request = await simulateTokenApproval(publicClient, {
             account: address,
-            address: asset.address,
-            abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [vaultAddress, 0n]
+            token: asset.address,
+            spender: vaultAddress,
+            amount,
+            chainId
           });
-          await wait(await writeContractAsync(reset.request));
+          if (!request) throw new Error(t('form.approvalDeclined', 'The token declined the spending approval.'));
+          await wait(await writeContractAsync(request));
+        };
+        if (liveAllowance > 0n) {
+          setStep('resetting');
+          await approve(0n);
         }
         setStep('approving');
-        const approval = await publicClient.simulateContract({
-          account: address,
-          address: asset.address,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [vaultAddress, amountRaw]
-        });
-        await wait(await writeContractAsync(approval.request));
-        setStep('idle');
+        await approve(maxSelected ? withApprovalBuffer(amountRaw) : amountRaw);
         setMessage(
           t('form.approvalConfirmedRetry', 'Approval confirmed. Submit again to {action} {symbol}.', {
             action: actionVerb.toLowerCase(),
@@ -184,6 +291,7 @@ export default function VaultActionForm({
         return;
       }
 
+      let warning: string | undefined;
       if (mode === 'supply') {
         setStep('supplying');
         const deposit = await publicClient.simulateContract({
@@ -191,13 +299,28 @@ export default function VaultActionForm({
           address: vaultAddress,
           abi: ERC4626_ABI,
           functionName: 'deposit',
-          args: [amountRaw, address]
+          args: [amountRaw, receiver]
         });
-        await wait(await writeContractAsync(deposit.request));
-        setMessage(
-          t('form.actionConfirmed', '{action} confirmed: {amount} {symbol}.', { action: actionVerb, amount, symbol: asset.symbol })
-        );
-        dispatchSuccess(t('form.actionTxConfirmed', '{action} transaction confirmed', { action: actionVerb }));
+        const receipt = await wait(await writeContractAsync(deposit.request));
+        if (requiresCollateralCheck) {
+          setStep('checkingCollateral');
+          try {
+            // A load-balanced RPC can return a "latest" state older than the confirmed deposit.
+            const head = await publicClient.getBlockNumber({ cacheTime: 0 });
+            const status = await readCollateralStatus(head > receipt.blockNumber ? head : receipt.blockNumber);
+            queryClient.setQueryData(collateralKey, status);
+            if (!status.enabled) {
+              warning = t(
+                'form.depositUnprotected',
+                'Deposit landed on the account, but this vault is not enabled as its collateral — the position is not protected.'
+              );
+            } else if (!status.open) {
+              warning = t('form.depositClosed', 'The deposit landed on the account, but this borrow position is closed.');
+            }
+          } catch {
+            warning = t('form.depositUnverified', 'Deposit landed on the account, but its collateral status could not be verified.');
+          }
+        }
       } else {
         setStep('withdrawing');
         const withdrawTx = await publicClient.simulateContract({
@@ -208,19 +331,26 @@ export default function VaultActionForm({
           args: [amountRaw, address, address]
         });
         await wait(await writeContractAsync(withdrawTx.request));
+      }
+      if (warning) {
+        setMessage(warning);
+        setSeverity('warning');
+        dispatchWarning(warning);
+      } else {
         setMessage(
           t('form.actionConfirmed', '{action} confirmed: {amount} {symbol}.', { action: actionVerb, amount, symbol: asset.symbol })
         );
         dispatchSuccess(t('form.actionTxConfirmed', '{action} transaction confirmed', { action: actionVerb }));
       }
       setAmount('');
-      await reads.refetch();
-      onSuccess();
+      setMaxSelected(false);
+      await Promise.all([reads.refetch(), vaultReads.refetch()]);
+      await onSuccess();
     } catch (error) {
       const text =
         error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : t('form.txFailed', 'Transaction failed');
       setMessage(text);
-      setFailed(true);
+      setSeverity('error');
       dispatchError(text);
     } finally {
       setStep('idle');
@@ -230,6 +360,7 @@ export default function VaultActionForm({
   const buttonLabel = busy
     ? (
         {
+          checkingCollateral: t('form.checkingCollateral', 'Checking collateral status...'),
           resetting: t('form.resettingAllowance', 'Resetting allowance...'),
           approving: t('form.approvingSymbol', 'Approving {symbol}...', { symbol: asset.symbol }),
           supplying: t('form.actionInProgress', '{action}...', { action: actionVerb }),
@@ -261,9 +392,13 @@ export default function VaultActionForm({
           <InputBase
             fullWidth
             value={amount}
-            onChange={(event) => setAmount(formatAssetOutput(event.target.value))}
-            placeholder="0.00"
+            onChange={(event) => {
+              setMaxSelected(false);
+              setAmount(formatAssetOutput(event.target.value));
+            }}
             disabled={busy}
+            readOnly={!address || collateralBlocked}
+            placeholder="0.00"
             inputProps={{
               inputMode: 'decimal',
               'aria-label': t('form.amountInputLabel', 'Amount of {symbol} to {action}', {
@@ -284,8 +419,11 @@ export default function VaultActionForm({
             {address ? rawText(available, asset.decimals) : '0'} {asset.symbol}{' '}
             <Button
               size="small"
-              onClick={() => setAmount(inputFromRaw(available, asset.decimals))}
-              disabled={!address || available === 0n || busy}
+              onClick={() => {
+                setMaxSelected(true);
+                setAmount(inputFromRaw(available, asset.decimals));
+              }}
+              disabled={!address || available === 0n || busy || collateralBlocked}
               aria-label={t('form.useMax', 'Use maximum available {symbol}', { symbol: asset.symbol })}
             >
               {t('common.max', 'Max')}
@@ -307,6 +445,25 @@ export default function VaultActionForm({
           </Typography>
           <Typography>{preview.data === undefined ? '-' : rawText(preview.data as bigint, shareDecimals)}</Typography>
         </Box>
+        {showTargetShares && (
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 1,
+              paddingY: 1.5,
+              borderTop: `1px solid ${theme.palette.divider}`
+            }}
+          >
+            <Typography color="text.secondary">{t('form.positionShareBalance', 'Position share balance')}</Typography>
+            <Typography>
+              {targetShares === undefined ? '—' : rawText(targetShares, shareDecimals)}
+              {targetShares !== undefined &&
+                preview.data !== undefined &&
+                ` → ${rawText(targetShares + (preview.data as bigint), shareDecimals)}`}
+            </Typography>
+          </Box>
+        )}
         {mode === 'withdraw' && (
           <Box sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 1.5, borderTop: `1px solid ${theme.palette.divider}` }}>
             <Typography color="text.secondary">{t('form.shareBalance', 'Share balance')}</Typography>
@@ -315,6 +472,23 @@ export default function VaultActionForm({
         )}
       </Box>
 
+      {collateralBlocked && (
+        <Alert
+          severity={
+            collateralCheckUnavailable || (collateralStatus.data && (!collateralStatus.data.enabled || !collateralStatus.data.open))
+              ? 'warning'
+              : 'info'
+          }
+        >
+          {collateralCheckUnavailable
+            ? t('form.collateralCheckUnavailable', 'Could not verify collateral status on this network.')
+            : collateralStatus.data?.open === false
+              ? t('form.positionClosed', 'This borrow position is closed. You cannot add collateral for this account.')
+              : collateralStatus.data?.enabled === false
+                ? t('form.collateralDisabled', 'The receiving account must enable this vault as collateral before you can add funds.')
+                : t('form.checkingCollateral', 'Checking collateral status...')}
+        </Alert>
+      )}
       {exceeds && (
         <Alert severity="warning">
           {mode === 'supply'
@@ -322,26 +496,15 @@ export default function VaultActionForm({
             : t('form.exceedsWithdrawable', 'Amount exceeds your currently withdrawable balance.')}
         </Alert>
       )}
-      {message && <Alert severity={failed ? 'error' : 'success'}>{message}</Alert>}
-      {hash && chainId === 1 && (
-        <Link
-          href={`https://etherscan.io/tx/${hash}`}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={t('form.viewTxLabel', 'View transaction {hash} in the block explorer', {
-            hash: `${hash.slice(0, 6)}…${hash.slice(-4)}`
-          })}
-        >
-          {t('form.viewTx', 'View transaction')} <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
-        </Link>
-      )}
+      {message && <Alert severity={severity}>{message}</Alert>}
+      {hash && <TransactionLink chainId={chainId} hash={hash} />}
 
       <Button
         variant="contained"
         color="secondary"
         size="large"
         onClick={submit}
-        disabled={busy || (Boolean(address) && !wrongNetwork && (amountRaw <= 0n || exceeds))}
+        disabled={busy || (Boolean(address) && !wrongNetwork && (amountRaw <= 0n || exceeds || collateralBlocked))}
         aria-busy={busy}
         sx={{ minHeight: 48, fontWeight: 600 }}
       >

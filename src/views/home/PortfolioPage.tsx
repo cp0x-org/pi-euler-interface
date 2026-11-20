@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { Alert, Box, Button, Chip, CircularProgress, Grid, Paper, Stack, Tab, Tabs, Typography, useTheme } from '@mui/material';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { formatUnits } from 'viem';
-import { useAccount } from 'wagmi';
 
 import { fetchAccountPortfolio, tokenImageUrl } from '@/api/euler';
 import { getRuntimeConfig } from '@/appconfig/runtime';
@@ -13,11 +12,14 @@ import ChainFilter, { ChainFilterValue } from 'components/ChainFilter';
 import { ChainBadge } from 'components/ChainIcon';
 import ConnectButtonCustom from 'components/ConnectButtonCustom';
 import { TokenIcon } from 'components/TokenIcon';
+import { AccountLookup } from 'components/ViewedAccount';
 import YieldBreakdownInfo from 'components/YieldBreakdownInfo';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
 import useTranslate from 'hooks/useTranslate';
+import useViewedAccount from 'hooks/useViewedAccount';
 import { EulerApyBreakdown, EulerBorrowPosition, EulerDepositPosition } from 'types/euler';
 import { formatShortUSDS } from 'utils/formatters';
+import { withViewedAccount } from 'utils/viewedAccount';
 
 type ChainedBorrowPosition = EulerBorrowPosition & { chainId: number };
 type ChainedDepositPosition = EulerDepositPosition & { chainId: number };
@@ -55,11 +57,11 @@ function rawAmount(raw: string, decimals: number): number {
 function shortAddress(address?: string): string {
   return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '-';
 }
-function fixed1e18(value: string): number {
+function fixed1e18(value: string, fallback = 0): number {
   try {
     return Number(formatUnits(BigInt(value), 18));
   } catch {
-    return 0;
+    return fallback;
   }
 }
 
@@ -68,7 +70,16 @@ export default function PortfolioPage() {
   const t = useTranslate();
   const navigate = useNavigate();
   const copy = useCopyToClipboard();
-  const { address } = useAccount();
+  const viewed = useViewedAccount();
+  const { account, rawAccount, requestedAccount, isOther } = viewed;
+  const lookup = <AccountLookup key={rawAccount ?? undefined} {...viewed} />;
+  const viewedBanner = isOther && account && (
+    <Alert severity="info" sx={{ mb: 2 }} title={account}>
+      {t('portfolio.viewingAccount', 'Viewing {address} — repay and add collateral from your wallet. Borrow and withdraw need the owner.', {
+        address: shortAddress(account)
+      })}
+    </Alert>
+  );
   const { chains } = getRuntimeConfig();
   const [tab, setTab] = useState(0);
   const [chainFilter, setChainFilter] = useState<ChainFilterValue>('all');
@@ -78,9 +89,9 @@ export default function PortfolioPage() {
   // the other one's shape (blank position / crash on back navigation).
   const portfolioQueries = useQueries({
     queries: chains.map((chain) => ({
-      queryKey: ['euler', 'portfolio', chain.chainId, address],
-      enabled: Boolean(address),
-      queryFn: () => fetchAccountPortfolio(chain.chainId, address as string),
+      queryKey: ['euler', 'portfolio', chain.chainId, account],
+      enabled: Boolean(account),
+      queryFn: () => fetchAccountPortfolio(chain.chainId, account as string),
       refetchInterval: 30_000
     }))
   });
@@ -88,21 +99,38 @@ export default function PortfolioPage() {
   const healthColor = (hf: number) =>
     hf >= 2 ? theme.palette.success.main : hf >= 1.25 ? theme.palette.warning.main : theme.palette.error.main;
 
-  if (!address)
+  if (viewed.invalidAccount)
     return (
-      <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 360, textAlign: 'center', gap: 2 }}>
-        <Typography variant="h2">{t('portfolio.yourPortfolio', 'Your portfolio')}</Typography>
-        <Typography color="text.secondary" sx={{ maxWidth: 420 }}>
-          {t('portfolio.connectPrompt', 'Connect your wallet to view your Euler borrow positions and deposits, and to manage them.')}
-        </Typography>
-        <ConnectButtonCustom />
+      <Box>
+        {lookup}
+        <Alert severity="error">
+          {t('position.invalidAccount', 'The account address in this link is invalid. Correct it to continue.')}
+        </Alert>
+      </Box>
+    );
+
+  if (!account)
+    return (
+      <Box>
+        {lookup}
+        <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 360, textAlign: 'center', gap: 2 }}>
+          <Typography variant="h2">{t('portfolio.yourPortfolio', 'Your portfolio')}</Typography>
+          <Typography color="text.secondary" sx={{ maxWidth: 420 }}>
+            {t('portfolio.connectPrompt', 'Connect your wallet to view your Euler borrow positions and deposits, and to manage them.')}
+          </Typography>
+          <ConnectButtonCustom />
+        </Box>
       </Box>
     );
 
   if (portfolioQueries.some((query) => query.isPending))
     return (
-      <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
-        <CircularProgress aria-label={t('portfolio.loading', 'Loading portfolio')} />
+      <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto' }}>
+        {lookup}
+        {viewedBanner}
+        <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 420 }}>
+          <CircularProgress aria-label={t('portfolio.loading', 'Loading portfolio')} />
+        </Box>
       </Box>
     );
 
@@ -150,6 +178,9 @@ export default function PortfolioPage() {
   const borrows: ChainedBorrowPosition[] = successfulPortfolios.flatMap(({ chainId, portfolio }) =>
     (portfolio.borrows ?? []).map((position) => ({ ...position, chainId }))
   );
+  if (isOther) {
+    borrows.sort((left, right) => fixed1e18(left.healthFactor, Number.MAX_VALUE) - fixed1e18(right.healthFactor, Number.MAX_VALUE));
+  }
   const deposits: ChainedDepositPosition[] = successfulPortfolios.flatMap(({ chainId, portfolio }) =>
     (portfolio.savings ?? []).map((deposit) => ({ ...deposit, chainId }))
   );
@@ -160,18 +191,22 @@ export default function PortfolioPage() {
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginBottom: 2.5, flexWrap: 'wrap' }}>
         <Typography variant="h2">{t('portfolio.title', 'Portfolio')}</Typography>
-        <Chip
-          size="small"
-          variant="outlined"
-          label={shortAddress(address)}
-          aria-label={t('portfolio.copyAddress', 'Copy connected wallet address {address}', { address: shortAddress(address) })}
-          onDelete={() => copy.copyToClipboard(address)}
-          deleteIcon={<ContentCopyIcon sx={{ fontSize: 15 }} />}
-        />
+        {!isOther && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={shortAddress(account)}
+            aria-label={t('portfolio.copyAddress', 'Copy connected wallet address {address}', { address: shortAddress(account) })}
+            onDelete={() => copy.copyToClipboard(account)}
+            deleteIcon={<ContentCopyIcon sx={{ fontSize: 15 }} />}
+          />
+        )}
         <Box sx={{ width: { xs: '100%', sm: 200 }, maxWidth: 220, marginLeft: { sm: 'auto' } }}>
           <ChainFilter value={chainFilter} onChange={setChainFilter} />
         </Box>
       </Box>
+      {lookup}
+      {viewedBanner}
 
       {failedQueryCount > 0 && (
         <Alert severity="warning" sx={{ marginBottom: 2 }}>
@@ -224,7 +259,13 @@ export default function PortfolioPage() {
         <Box sx={{ padding: { xs: 1.5, sm: 2.5 } }}>
           {tab === 0 ? (
             borrows.length === 0 ? (
-              <EmptyState text={t('portfolio.emptyPositions', 'You have no open borrow positions {scope}.', { scope: emptyScope })} />
+              <EmptyState
+                text={
+                  isOther
+                    ? t('portfolio.viewedEmptyPositions', 'This address has no open borrow positions {scope}.', { scope: emptyScope })
+                    : t('portfolio.emptyPositions', 'You have no open borrow positions {scope}.', { scope: emptyScope })
+                }
+              />
             ) : (
               <Stack spacing={1.5}>
                 {borrows.map((position) => (
@@ -232,25 +273,29 @@ export default function PortfolioPage() {
                     key={`${position.chainId}-${position.collateralVault.address}-${position.borrowVault.address}-${position.subAccount}`}
                     position={position}
                     healthColor={healthColor}
-                    onManage={() =>
-                      navigate(
-                        `/portfolio/position/${position.collateralVault.address}/${position.borrowVault.address}?network=${position.chainId}&sub=${position.subAccount}`
-                      )
-                    }
+                    href={withViewedAccount(positionHref(position), requestedAccount, isOther ? 'repay' : undefined)}
+                    repayHref={isOther ? withViewedAccount(positionHref(position), requestedAccount, 'repay') : undefined}
+                    addHref={isOther ? withViewedAccount(positionHref(position), requestedAccount, 'add') : undefined}
                   />
                 ))}
               </Stack>
             )
           ) : deposits.length === 0 ? (
-            <EmptyState text={t('portfolio.emptyDeposits', 'You have no deposits {scope}.', { scope: emptyScope })} />
+            <EmptyState
+              text={
+                isOther
+                  ? t('portfolio.viewedEmptyDeposits', 'This address has no deposits {scope}.', { scope: emptyScope })
+                  : t('portfolio.emptyDeposits', 'You have no deposits {scope}.', { scope: emptyScope })
+              }
+            />
           ) : (
             <Stack spacing={1.5}>
               {deposits.map((deposit) => (
                 <DepositRow
                   key={`${deposit.chainId}-${deposit.vault.address}-${deposit.subAccount}`}
                   deposit={deposit}
-                  onSupply={() => navigate(depositHref(deposit, deposit.chainId, 'supply'))}
-                  onWithdraw={() => navigate(depositHref(deposit, deposit.chainId, 'withdraw'))}
+                  onSupply={isOther ? undefined : () => navigate(depositHref(deposit, deposit.chainId, 'supply'))}
+                  onWithdraw={isOther ? undefined : () => navigate(depositHref(deposit, deposit.chainId, 'withdraw'))}
                 />
               ))}
             </Stack>
@@ -259,6 +304,12 @@ export default function PortfolioPage() {
       </Paper>
     </Box>
   );
+}
+
+function positionHref(position: ChainedBorrowPosition): string {
+  const params = new URLSearchParams({ network: String(position.chainId) });
+  if (position.subAccount) params.set('sub', position.subAccount);
+  return `/portfolio/position/${position.collateralVault.address}/${position.borrowVault.address}?${params}`;
 }
 
 function depositHref(deposit: EulerDepositPosition, chainId: number, action: 'supply' | 'withdraw'): string {
@@ -300,17 +351,23 @@ function SummaryStat({ label, value, valueColor, info }: { label: string; value:
 function PositionRow({
   position,
   healthColor,
-  onManage
+  href,
+  repayHref,
+  addHref
 }: {
   position: ChainedBorrowPosition;
   healthColor: (hf: number) => string;
-  onManage: () => void;
+  href: string;
+  repayHref?: string;
+  addHref?: string;
 }) {
   const theme = useTheme();
   const t = useTranslate();
+  const navigate = useNavigate();
+  const onManage = () => navigate(href);
   const collateral = position.collateralVault;
   const borrow = position.borrowVault;
-  const hf = fixed1e18(position.healthFactor);
+  const hf = fixed1e18(position.healthFactor, repayHref ? NaN : 0);
   const ltv = fixed1e18(position.currentLTV) * 100;
   const netValue = (position.totalCollateralValueUsd ?? 0) - (position.liabilityValueUsd ?? 0);
   // `roe` is the API's return on equity (netApy x leverage); fall back to the gross net APY when absent.
@@ -360,9 +417,9 @@ function PositionRow({
         <Metric label={t('portfolio.netValue', 'Net value')} value={fmtUsd(netValue)} />
         <Metric label={t('common.debt', 'Debt')} value={fmtUsd(position.liabilityValueUsd ?? 0)} />
         <Metric
-          label={t('common.health', 'Health')}
-          value={Number.isFinite(hf) && hf > 0 ? hf.toFixed(2) : '∞'}
-          valueColor={healthColor(hf)}
+          label={repayHref ? t('common.healthFactor', 'Health factor') : t('common.health', 'Health')}
+          value={repayHref ? (Number.isFinite(hf) ? hf.toFixed(2) : '—') : hf > 0 ? hf.toFixed(2) : '∞'}
+          valueColor={Number.isFinite(hf) ? healthColor(hf) : undefined}
         />
         <Metric
           label={t('common.netApy', 'Net APY')}
@@ -396,29 +453,64 @@ function PositionRow({
           }
           extra={t('portfolio.leverageShort', '{value} leverage', { value: leverage })}
         />
-        <Grid size={{ xs: 12, md: 1.1 }} sx={{ textAlign: { md: 'right' } }}>
-          <Button
-            size="small"
-            variant="outlined"
-            color="secondary"
-            onClick={(event) => {
-              event.stopPropagation();
-              onManage();
-            }}
-            aria-label={t('portfolio.managePosition', 'Manage {collateral} to {borrow} borrow position', {
-              collateral: collateral.asset.symbol,
-              borrow: borrow.asset.symbol
-            })}
-          >
-            {t('portfolio.manage', 'Manage')}
-          </Button>
-        </Grid>
+        {repayHref && addHref ? (
+          <Grid size={12}>
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" justifyContent={{ md: 'flex-end' }}>
+              <Button
+                component={RouterLink}
+                to={repayHref}
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {t('common.repay', 'Repay')}
+              </Button>
+              <Button
+                component={RouterLink}
+                to={addHref}
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {t('position.addCollateral', 'Add collateral')}
+              </Button>
+            </Stack>
+          </Grid>
+        ) : (
+          <Grid size={{ xs: 12, md: 1.1 }} sx={{ textAlign: { md: 'right' } }}>
+            <Button
+              size="small"
+              variant="outlined"
+              color="secondary"
+              onClick={(event) => {
+                event.stopPropagation();
+                onManage();
+              }}
+              aria-label={t('portfolio.managePosition', 'Manage {collateral} to {borrow} borrow position', {
+                collateral: collateral.asset.symbol,
+                borrow: borrow.asset.symbol
+              })}
+            >
+              {t('portfolio.manage', 'Manage')}
+            </Button>
+          </Grid>
+        )}
       </Grid>
     </Paper>
   );
 }
 
-function DepositRow({ deposit, onSupply, onWithdraw }: { deposit: ChainedDepositPosition; onSupply: () => void; onWithdraw: () => void }) {
+function DepositRow({
+  deposit,
+  onSupply,
+  onWithdraw
+}: {
+  deposit: ChainedDepositPosition;
+  onSupply?: () => void;
+  onWithdraw?: () => void;
+}) {
   const theme = useTheme();
   const t = useTranslate();
   const isEarn = deposit.vault.type === 'EulerEarn';
@@ -461,34 +553,36 @@ function DepositRow({ deposit, onSupply, onWithdraw }: { deposit: ChainedDeposit
           extra={`${assets.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${deposit.vault.asset.symbol}`}
         />
         <Metric label={t('common.apy', 'APY')} value={`${(deposit.apy ?? 0).toFixed(2)}%`} valueColor={theme.palette.success.main} />
-        <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { md: 'right' } }}>
-          <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
-            <Button
-              size="small"
-              variant="contained"
-              color="secondary"
-              onClick={onSupply}
-              aria-label={t('portfolio.supplyTo', 'Supply {symbol} to {vault}', {
-                symbol: deposit.vault.asset.symbol,
-                vault: deposit.vault.shares.symbol
-              })}
-            >
-              {t('common.supply', 'Supply')}
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              onClick={onWithdraw}
-              aria-label={t('portfolio.withdrawFrom', 'Withdraw {symbol} from {vault}', {
-                symbol: deposit.vault.asset.symbol,
-                vault: deposit.vault.shares.symbol
-              })}
-            >
-              {t('common.withdraw', 'Withdraw')}
-            </Button>
-          </Stack>
-        </Grid>
+        {onSupply && onWithdraw && (
+          <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { md: 'right' } }}>
+            <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
+              <Button
+                size="small"
+                variant="contained"
+                color="secondary"
+                onClick={onSupply}
+                aria-label={t('portfolio.supplyTo', 'Supply {symbol} to {vault}', {
+                  symbol: deposit.vault.asset.symbol,
+                  vault: deposit.vault.shares.symbol
+                })}
+              >
+                {t('common.supply', 'Supply')}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                onClick={onWithdraw}
+                aria-label={t('portfolio.withdrawFrom', 'Withdraw {symbol} from {vault}', {
+                  symbol: deposit.vault.asset.symbol,
+                  vault: deposit.vault.shares.symbol
+                })}
+              >
+                {t('common.withdraw', 'Withdraw')}
+              </Button>
+            </Stack>
+          </Grid>
+        )}
       </Grid>
     </Paper>
   );

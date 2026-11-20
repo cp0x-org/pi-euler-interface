@@ -1,26 +1,40 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { Alert, Box, Button, CircularProgress, InputBase, Link, Paper, Stack, Typography, useTheme } from '@mui/material';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Address, BaseError, formatUnits, maxUint256, parseUnits } from 'viem';
-import { useAccount, usePublicClient, useReadContracts, useSwitchChain, useWriteContract } from 'wagmi';
+import { Alert, Box, Button, CircularProgress, InputBase, Paper, Stack, Typography, useTheme } from '@mui/material';
+import {
+  Address,
+  BaseError,
+  ContractFunctionRevertedError,
+  formatUnits,
+  type Hash,
+  parseUnits,
+  type TransactionReceipt,
+  toFunctionSelector
+} from 'viem';
+import { useAccount, usePublicClient, useReadContract, useReadContracts, useSwitchChain, useWriteContract } from 'wagmi';
 
-import { ERC20_ABI } from '@/contracts/erc4626';
+import { ERC20_ABI, simulateTokenApproval } from '@/contracts/erc4626';
 import { EVAULT_ABI } from '@/contracts/evk';
+import TransactionLink from 'components/TransactionLink';
+import { getRepayAmounts, requiresRepayReview, type MaxSelection } from 'utils/repay';
 import { TokenIcon } from 'components/TokenIcon';
 import useTranslate from 'hooks/useTranslate';
-import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
+import { formatAssetOutput, normalizePointAmount, shortenAddress } from 'utils/formatters';
 import { dispatchError, dispatchSuccess } from 'utils/snackbar';
 
 interface RepayFormProps {
+  targetAccount: Address;
+  isOther: boolean;
   chainId: number;
   liabilityVault: { address: Address; asset: { address: Address; symbol: string; decimals: number }; borrowApy: number };
   assetPriceUsd: number;
   tokenLogoUrl: string;
-  onSuccess: () => void;
+  onSuccess: (receipt: TransactionReceipt, message: string) => void | Promise<void>;
 }
 
-type Step = 'idle' | 'resetting' | 'approving' | 'repaying' | 'confirming';
+type Step = 'idle' | 'readingDebt' | 'resetting' | 'approving' | 'repaying' | 'confirming';
+
+const REPAY_TOO_MUCH = toFunctionSelector('E_RepayTooMuch()');
 
 function rawText(value: bigint, decimals: number): string {
   return Number(formatUnits(value, decimals)).toLocaleString('en-US', { maximumFractionDigits: 6 });
@@ -28,11 +42,24 @@ function rawText(value: bigint, decimals: number): string {
 function inputFromRaw(value: bigint, decimals: number): string {
   return formatUnits(value, decimals).replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
 }
-function minBigInt(a: bigint, b: bigint): bigint {
-  return a < b ? a : b;
+
+function parseRepayAmount(value: string, decimals: number): bigint {
+  try {
+    return parseUnits(normalizePointAmount(value || '0'), decimals);
+  } catch {
+    return 0n;
+  }
 }
 
-export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, tokenLogoUrl, onSuccess }: RepayFormProps) {
+export default function RepayForm({
+  targetAccount,
+  isOther,
+  chainId,
+  liabilityVault,
+  assetPriceUsd,
+  tokenLogoUrl,
+  onSuccess
+}: RepayFormProps) {
   const theme = useTheme();
   const t = useTranslate();
   const { address, chainId: connectedChainId } = useAccount();
@@ -42,10 +69,11 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');
+  const [maxSelection, setMaxSelection] = useState<MaxSelection>();
   const [step, setStep] = useState<Step>('idle');
-  const [hash, setHash] = useState<Address>();
+  const [hash, setHash] = useState<Hash>();
   const [message, setMessage] = useState('');
-  const [failed, setFailed] = useState(false);
+  const [messageSeverity, setMessageSeverity] = useState<'success' | 'warning' | 'error'>('success');
 
   const vaultAddress = liabilityVault.address;
   const assetAddress = liabilityVault.asset.address;
@@ -57,43 +85,100 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
     contracts: address
       ? [
           { address: assetAddress, abi: ERC20_ABI, functionName: 'balanceOf', args: [address], chainId },
-          { address: assetAddress, abi: ERC20_ABI, functionName: 'allowance', args: [address, vaultAddress], chainId },
-          { address: vaultAddress, abi: EVAULT_ABI, functionName: 'debtOf', args: [address], chainId }
+          { address: assetAddress, abi: ERC20_ABI, functionName: 'allowance', args: [address, vaultAddress], chainId }
         ]
       : [],
     query: { enabled: Boolean(address), refetchInterval: 15_000 }
   });
+  const debtRead = useReadContract({
+    address: vaultAddress,
+    abi: EVAULT_ABI,
+    functionName: 'debtOf',
+    args: [targetAccount],
+    chainId,
+    query: { refetchInterval: 15_000 }
+  });
+  const debt = debtRead.data ?? 0n;
   const balance = (reads.data?.[0]?.result as bigint | undefined) ?? 0n;
   const allowance = (reads.data?.[1]?.result as bigint | undefined) ?? 0n;
-  const debt = (reads.data?.[2]?.result as bigint | undefined) ?? 0n;
-  const maxRepayable = minBigInt(debt, balance);
 
-  const amountRaw = useMemo(() => {
-    try {
-      return parseUnits(normalizePointAmount(amount || '0'), decimals);
-    } catch {
-      return 0n;
-    }
-  }, [amount, decimals]);
+  const amountRaw = useMemo(() => parseRepayAmount(amount, decimals), [amount, decimals]);
+  const updateAmount = (value: string, selection?: MaxSelection) => {
+    setAmount(value);
+    setMaxSelection(selection);
+  };
 
   const busy = step !== 'idle';
   const wrongNetwork = Boolean(address && connectedChainId !== chainId);
-  const exceedsBalance = amountRaw > balance;
   const noDebt = debt === 0n;
-  // Repaying at least the full debt closes it out — use type(uint256).max so the vault settles the
-  // exact remaining debt with no dust left behind.
-  const repayFull = debt > 0n && amountRaw >= debt;
-  const approveAmount = repayFull ? debt : amountRaw;
-  const needsApprove = approveAmount > 0n && approveAmount > allowance;
-  const remainingDebt = repayFull ? 0n : debt > amountRaw ? debt - amountRaw : 0n;
-  const canSubmit = amountRaw > 0n && !exceedsBalance && !noDebt;
+  const quote = getRepayAmounts(amountRaw, debt, balance, isOther, maxSelection);
+  const followsDebt = !isOther && maxSelection === 'debt';
+  const displayedAmount = followsDebt ? inputFromRaw(quote.payment, decimals) : amount;
+  // A lower live quote becomes the new reference. Background increases cannot acknowledge themselves.
+  useEffect(() => {
+    if (followsDebt && debtRead.isSuccess && reads.data?.[0]?.status === 'success' && quote.payment < amountRaw) {
+      setAmount(inputFromRaw(quote.payment, decimals));
+    }
+  }, [followsDebt, debtRead.isSuccess, reads.data, quote.payment, amountRaw, decimals]);
+  const repayFull = debt > 0n && quote.remainingDebt === 0n;
+  const needsApprove = quote.requiredAllowance > allowance;
+  const exceedsBalance = quote.payment > balance;
+  const canSubmit = quote.payment > 0n && !exceedsBalance && !noDebt;
 
-  const wait = async (txHash: Address) => {
+  const readRepayment = async () => {
+    const [debtResult, wallet] = await Promise.all([debtRead.refetch(), reads.refetch()]);
+    if (!debtResult.isSuccess) throw new Error(t('repay.debtCheckFailed', 'Could not read the current debt for this account.'));
+    const liveBalance = wallet.data?.[0]?.result;
+    const liveAllowance = wallet.data?.[1]?.result;
+    if (!wallet.isSuccess || typeof liveBalance !== 'bigint' || typeof liveAllowance !== 'bigint') {
+      throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
+    }
+    const liveQuote = getRepayAmounts(amountRaw, debtResult.data, liveBalance, isOther, maxSelection);
+    return { ...liveQuote, debt: debtResult.data, balance: liveBalance, allowance: liveAllowance };
+  };
+
+  const showError = (error: unknown) => {
+    const debtChanged =
+      error instanceof BaseError &&
+      error.walk(
+        (cause) =>
+          cause instanceof ContractFunctionRevertedError && (cause.data?.errorName === 'E_RepayTooMuch' || cause.raw === REPAY_TOO_MUCH)
+      );
+    const text = debtChanged
+      ? t('repay.debtChanged', 'Debt changed, refresh and try again.')
+      : error instanceof BaseError
+        ? error.shortMessage
+        : error instanceof Error
+          ? error.message
+          : t('form.txFailed', 'Transaction failed');
+    setMessage(text);
+    setMessageSeverity('error');
+    dispatchError(text);
+  };
+
+  const selectMax = async () => {
+    setStep('readingDebt');
+    try {
+      const fresh = await readRepayment();
+      updateAmount(inputFromRaw(fresh.maximum, decimals), fresh.maximum === fresh.debt ? 'debt' : 'balance');
+    } catch (error) {
+      showError(error);
+    } finally {
+      setStep('idle');
+    }
+  };
+
+  const wait = async (txHash: Hash, replay?: (blockNumber: bigint) => Promise<unknown>) => {
     if (!publicClient) throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
     setHash(txHash);
     setStep('confirming');
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
-    if (receipt.status !== 'success') throw new Error(t('form.txReverted', 'Transaction reverted'));
+    if (receipt.status !== 'success') {
+      // Receipts carry no revert data. Replay a failed repayment at its mined block to decode the vault error.
+      if (replay) await replay(receipt.blockNumber);
+      throw new Error(t('form.txReverted', 'Transaction reverted'));
+    }
+    return receipt;
   };
 
   const submit = async () => {
@@ -101,61 +186,77 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
     if (wrongNetwork) return switchChainAsync({ chainId });
     if (!publicClient || !canSubmit || busy) return;
     setMessage('');
-    setFailed(false);
+    setMessageSeverity('success');
     setHash(undefined);
     try {
-      if (needsApprove) {
-        if (allowance > 0n) {
-          setStep('resetting');
-          const reset = await publicClient.simulateContract({
+      setStep('readingDebt');
+      const fresh = await readRepayment();
+      if (followsDebt) {
+        // Keep the amount the user last accepted as a guard even when polling has already updated the field.
+        const previous = amountRaw < quote.payment ? amountRaw : quote.payment;
+        updateAmount(inputFromRaw(fresh.payment, decimals), maxSelection);
+        if (requiresRepayReview(previous, fresh.payment)) {
+          setMessage(
+            t(
+              'repay.reviewIncrease',
+              'The repayment amount increased by more than 1%. Review the updated amount and press the button again.'
+            )
+          );
+          setMessageSeverity('warning');
+          return;
+        }
+      }
+      const requiresApproval = fresh.requiredAllowance > fresh.allowance;
+      if (fresh.payment === 0n || fresh.payment > fresh.balance || requiresApproval !== needsApprove) return;
+
+      if (requiresApproval) {
+        const approve = async (limit: bigint) => {
+          const approval = await simulateTokenApproval(publicClient, {
             account: address,
-            address: assetAddress,
-            abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [vaultAddress, 0n]
+            token: assetAddress,
+            spender: vaultAddress,
+            amount: limit,
+            chainId
           });
-          await wait(await writeContractAsync(reset.request));
+          if (!approval) throw new Error(t('form.approvalDeclined', 'The token declined the spending approval.'));
+          await wait(await writeContractAsync(approval));
+        };
+        if (fresh.allowance > 0n) {
+          setStep('resetting');
+          await approve(0n);
         }
         setStep('approving');
-        const approval = await publicClient.simulateContract({
-          account: address,
-          address: assetAddress,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [vaultAddress, approveAmount]
-        });
-        await wait(await writeContractAsync(approval.request));
-        setStep('idle');
+        await approve(fresh.approval);
         setMessage(t('repay.approvalConfirmedRetry', 'Approval confirmed. Submit again to repay {symbol}.', { symbol }));
         dispatchSuccess(t('form.approvalConfirmed', '{symbol} approval confirmed', { symbol }));
-        await reads.refetch();
+        await Promise.all([reads.refetch(), debtRead.refetch()]);
         return;
       }
 
       setStep('repaying');
-      const repay = await publicClient.simulateContract({
+      const call = {
         account: address,
         address: vaultAddress,
         abi: EVAULT_ABI,
         functionName: 'repay',
-        args: [repayFull ? maxUint256 : amountRaw, address]
-      });
-      await wait(await writeContractAsync(repay.request));
-      setMessage(
-        repayFull
-          ? t('repay.repaidFull', 'Repaid the full {symbol} debt.', { symbol })
-          : t('repay.repaidAmount', 'Repaid {amount} {symbol}.', { amount, symbol })
+        args: [fresh.assets, targetAccount]
+      } as const;
+      const repay = await publicClient.simulateContract(call);
+      const receipt = await wait(await writeContractAsync(repay.request), (blockNumber) =>
+        publicClient.simulateContract({ ...call, blockNumber })
       );
-      dispatchSuccess(t('repay.txConfirmed', 'Repay transaction confirmed'));
-      setAmount('');
-      await reads.refetch();
-      onSuccess();
+      const confirmed = t('repay.txConfirmed', 'Repay transaction confirmed');
+      const confirmation = isOther
+        ? confirmed
+        : fresh.remainingDebt === 0n
+          ? t('repay.repaidFull', 'Repaid the full {symbol} debt.', { symbol })
+          : t('repay.repaidAmount', 'Repaid {amount} {symbol}.', { amount, symbol });
+      dispatchSuccess(confirmed);
+      setHash(undefined);
+      updateAmount('');
+      await Promise.all([onSuccess(receipt, confirmation), reads.refetch(), debtRead.refetch()]);
     } catch (error) {
-      const text =
-        error instanceof BaseError ? error.shortMessage : error instanceof Error ? error.message : t('form.txFailed', 'Transaction failed');
-      setMessage(text);
-      setFailed(true);
-      dispatchError(text);
+      showError(error);
     } finally {
       setStep('idle');
     }
@@ -164,6 +265,7 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
   const buttonLabel = busy
     ? (
         {
+          readingDebt: t('repay.readingDebt', 'Checking current debt...'),
           resetting: t('form.resettingAllowance', 'Resetting allowance...'),
           approving: t('form.approvingSymbol', 'Approving {symbol}...', { symbol }),
           repaying: t('repay.repayingSymbol', 'Repaying {symbol}...', { symbol }),
@@ -177,9 +279,11 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
         ? t('wallet.switchNetwork', 'Switch network')
         : needsApprove
           ? t('form.approveSymbol', 'Approve {symbol}', { symbol })
-          : repayFull
-            ? t('repay.repayAllSymbol', 'Repay all {symbol}', { symbol })
-            : t('repay.repaySymbol', 'Repay {symbol}', { symbol });
+          : isOther
+            ? t('repay.forAccount', 'Repay for {address}', { address: shortenAddress(targetAccount) })
+            : repayFull
+              ? t('repay.repayAllSymbol', 'Repay all {symbol}', { symbol })
+              : t('repay.repaySymbol', 'Repay {symbol}', { symbol });
 
   return (
     <Stack spacing={2}>
@@ -197,10 +301,11 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginY: 1 }}>
           <InputBase
             fullWidth
-            value={amount}
-            onChange={(event) => setAmount(formatAssetOutput(event.target.value))}
-            placeholder="0.00"
+            value={displayedAmount}
+            onChange={(event) => updateAmount(formatAssetOutput(event.target.value))}
             disabled={busy}
+            readOnly={!address}
+            placeholder="0.00"
             inputProps={{ inputMode: 'decimal', 'aria-label': t('repay.amountInputLabel', 'Amount of {symbol} to repay', { symbol }) }}
             sx={{ '& input': { fontSize: 32, fontWeight: 500, padding: 0 } }}
           />
@@ -209,14 +314,14 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
         </Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography color="text.secondary">
-            ${(Number(normalizePointAmount(amount || '0')) * assetPriceUsd).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+            ${(Number(formatUnits(quote.payment, decimals)) * assetPriceUsd).toLocaleString('en-US', { maximumFractionDigits: 2 })}
           </Typography>
           <Typography color="text.secondary">
-            {address ? rawText(maxRepayable, decimals) : '0'} {symbol}{' '}
+            {address ? rawText(quote.maximum, decimals) : '0'} {symbol}{' '}
             <Button
               size="small"
-              onClick={() => setAmount(inputFromRaw(maxRepayable, decimals))}
-              disabled={!address || maxRepayable === 0n || busy}
+              onClick={selectMax}
+              disabled={!address || quote.maximum === 0n || busy}
               aria-label={t('repay.useMax', 'Use maximum repayable {symbol}', { symbol })}
             >
               {t('common.max', 'Max')}
@@ -231,8 +336,12 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
           <Row label={t('common.walletBalance', 'Wallet balance')} value={`${rawText(balance, decimals)} ${symbol}`} />
           <Row
             label={t('repay.remainingDebt', 'Remaining debt')}
-            value={`${rawText(remainingDebt, decimals)} ${symbol}`}
-            valueColor={remainingDebt === 0n ? theme.palette.success.main : undefined}
+            value={
+              isOther && repayFull
+                ? t('repay.approximateRemaining', '≈ 0 (interest accrued until the transaction is mined may remain)')
+                : `${rawText(quote.remainingDebt, decimals)} ${symbol}`
+            }
+            valueColor={quote.remainingDebt === 0n ? theme.palette.success.main : undefined}
           />
         </Stack>
       </Box>
@@ -241,19 +350,8 @@ export default function RepayForm({ chainId, liabilityVault, assetPriceUsd, toke
       {exceedsBalance && (
         <Alert severity="warning">{t('repay.exceedsBalance', 'Repay amount exceeds your {symbol} wallet balance.', { symbol })}</Alert>
       )}
-      {message && <Alert severity={failed ? 'error' : 'success'}>{message}</Alert>}
-      {hash && chainId === 1 && (
-        <Link
-          href={`https://etherscan.io/tx/${hash}`}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={t('form.viewTxLabel', 'View transaction {hash} in the block explorer', {
-            hash: `${hash.slice(0, 6)}…${hash.slice(-4)}`
-          })}
-        >
-          {t('form.viewTx', 'View transaction')} <OpenInNewIcon sx={{ fontSize: 16, verticalAlign: 'middle' }} />
-        </Link>
-      )}
+      {message && <Alert severity={messageSeverity}>{message}</Alert>}
+      {hash && <TransactionLink chainId={chainId} hash={hash} />}
 
       <Button
         variant="contained"
