@@ -2,7 +2,7 @@ import { maxUint256 } from 'viem';
 
 export type MaxSelection = 'debt' | 'balance';
 
-export const withApprovalBuffer = (amount: bigint) => amount + (amount + 999n) / 1000n;
+const withApprovalBuffer = (amount: bigint) => amount + (amount + 999n) / 1000n;
 
 export const requiresRepayReview = (shown: bigint, fresh: bigint) => fresh * 100n > shown * 101n;
 
@@ -19,7 +19,9 @@ export function getRepayAmounts(entered: bigint, debt: bigint, balance: bigint, 
     assets: full ? maxUint256 : payment,
     // A full Max can accrue between simulation and inclusion. Check 1 bp, grant 10 bp, as on Morpho.
     requiredAllowance: full && max ? payment + (payment + 9999n) / 10000n : payment,
-    approval: max ? withApprovalBuffer(payment) : payment,
+    // Only an own full Max (assets = max uint) can pull more than the quote; every other repay sends a
+    // fixed amount, so an exact approval leaves no allowance behind.
+    approval: full && max ? withApprovalBuffer(payment) : payment,
     remainingDebt: debt - payment
   };
 }

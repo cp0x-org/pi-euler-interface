@@ -207,7 +207,13 @@ export default function RepayForm({
         }
       }
       const requiresApproval = fresh.requiredAllowance > fresh.allowance;
-      if (fresh.payment === 0n || fresh.payment > fresh.balance || requiresApproval !== needsApprove) return;
+      if (fresh.payment === 0n || fresh.payment > fresh.balance || requiresApproval !== needsApprove) {
+        setMessage(
+          t('form.stateChanged', 'Your balance, allowance or the debt changed. Review the updated form and press the button again.')
+        );
+        setMessageSeverity('warning');
+        return;
+      }
 
       if (requiresApproval) {
         const approve = async (limit: bigint) => {
@@ -332,6 +338,7 @@ export default function RepayForm({
 
       <Box sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, padding: 2 }}>
         <Stack spacing={1.25}>
+          {isOther && <Row label={t('repay.debtAccount', 'Debt account')} value={targetAccount} />}
           <Row label={t('common.currentDebt', 'Current debt')} value={`${rawText(debt, decimals)} ${symbol}`} />
           <Row label={t('common.walletBalance', 'Wallet balance')} value={`${rawText(balance, decimals)} ${symbol}`} />
           <Row
@@ -372,8 +379,10 @@ export default function RepayForm({
 function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-      <Typography color="text.secondary">{label}</Typography>
-      <Typography sx={{ textAlign: 'right', color: valueColor }}>{value}</Typography>
+      <Typography color="text.secondary" sx={{ flexShrink: 0 }}>
+        {label}
+      </Typography>
+      <Typography sx={{ textAlign: 'right', color: valueColor, overflowWrap: 'anywhere' }}>{value}</Typography>
     </Box>
   );
 }
