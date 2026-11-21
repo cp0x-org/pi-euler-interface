@@ -95,12 +95,16 @@ export function ViewedPositionBanner({
           label={shortenAddress(account)}
           aria-label={t('position.returnToWallet', 'Return to my wallet from {address}', { address: account })}
         />
-        {subAccount && (
-          <Typography component="span" variant="body2" title={subAccount}>
-            {t('position.viewedSubAccount', '· sub-account {address}', { address: shortenAddress(subAccount) })}
-          </Typography>
-        )}
       </Stack>
+      {/* Full addresses: a shortened prefix/suffix can be matched by a vanity address in a crafted link. */}
+      <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+        {account}
+      </Typography>
+      {subAccount && (
+        <Typography variant="body2" sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+          {t('position.viewedSubAccount', '· sub-account {address}', { address: subAccount })}
+        </Typography>
+      )}
       <Typography variant="body2" sx={{ mt: 0.5 }}>
         {connected
           ? t('position.walletPays', 'Your wallet {wallet} pays. It can repay and add collateral. Only the owner can borrow or withdraw.', {

@@ -76,7 +76,7 @@ export default function PortfolioPage() {
   const viewedBanner = isOther && account && (
     <Alert severity="info" sx={{ mb: 2 }} title={account}>
       {t('portfolio.viewingAccount', 'Viewing {address} — repay and add collateral from your wallet. Borrow and withdraw need the owner.', {
-        address: shortAddress(account)
+        address: account
       })}
     </Alert>
   );

@@ -98,6 +98,9 @@ export default function RepayForm({
     chainId,
     query: { refetchInterval: 15_000 }
   });
+  // Until debtOf has been read (loading or RPC failure) the debt is unknown, not zero: never show it as
+  // repaid and never let it enable a submit.
+  const debtKnown = debtRead.data !== undefined;
   const debt = debtRead.data ?? 0n;
   const balance = (reads.data?.[0]?.result as bigint | undefined) ?? 0n;
   const allowance = (reads.data?.[1]?.result as bigint | undefined) ?? 0n;
@@ -110,7 +113,7 @@ export default function RepayForm({
 
   const busy = step !== 'idle';
   const wrongNetwork = Boolean(address && connectedChainId !== chainId);
-  const noDebt = debt === 0n;
+  const noDebt = debtKnown && debt === 0n;
   const quote = getRepayAmounts(amountRaw, debt, balance, isOther, maxSelection);
   const followsDebt = !isOther && maxSelection === 'debt';
   const displayedAmount = followsDebt ? inputFromRaw(quote.payment, decimals) : amount;
@@ -123,7 +126,7 @@ export default function RepayForm({
   const repayFull = debt > 0n && quote.remainingDebt === 0n;
   const needsApprove = quote.requiredAllowance > allowance;
   const exceedsBalance = quote.payment > balance;
-  const canSubmit = quote.payment > 0n && !exceedsBalance && !noDebt;
+  const canSubmit = debtKnown && quote.payment > 0n && !exceedsBalance && !noDebt;
 
   const readRepayment = async () => {
     const [debtResult, wallet] = await Promise.all([debtRead.refetch(), reads.refetch()]);
@@ -207,7 +210,13 @@ export default function RepayForm({
         }
       }
       const requiresApproval = fresh.requiredAllowance > fresh.allowance;
-      if (fresh.payment === 0n || fresh.payment > fresh.balance || requiresApproval !== needsApprove) return;
+      if (fresh.payment === 0n || fresh.payment > fresh.balance || requiresApproval !== needsApprove) {
+        setMessage(
+          t('form.stateChanged', 'Your balance, allowance or the debt changed. Review the updated form and press the button again.')
+        );
+        setMessageSeverity('warning');
+        return;
+      }
 
       if (requiresApproval) {
         const approve = async (limit: bigint) => {
@@ -332,20 +341,26 @@ export default function RepayForm({
 
       <Box sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, padding: 2 }}>
         <Stack spacing={1.25}>
-          <Row label={t('common.currentDebt', 'Current debt')} value={`${rawText(debt, decimals)} ${symbol}`} />
+          {isOther && <Row label={t('repay.debtAccount', 'Debt account')} value={targetAccount} />}
+          <Row label={t('common.currentDebt', 'Current debt')} value={debtKnown ? `${rawText(debt, decimals)} ${symbol}` : '—'} />
           <Row label={t('common.walletBalance', 'Wallet balance')} value={`${rawText(balance, decimals)} ${symbol}`} />
           <Row
             label={t('repay.remainingDebt', 'Remaining debt')}
             value={
-              isOther && repayFull
-                ? t('repay.approximateRemaining', '≈ 0 (interest accrued until the transaction is mined may remain)')
-                : `${rawText(quote.remainingDebt, decimals)} ${symbol}`
+              !debtKnown
+                ? '—'
+                : isOther && repayFull
+                  ? t('repay.approximateRemaining', '≈ 0 (interest accrued until the transaction is mined may remain)')
+                  : `${rawText(quote.remainingDebt, decimals)} ${symbol}`
             }
-            valueColor={quote.remainingDebt === 0n ? theme.palette.success.main : undefined}
+            valueColor={debtKnown && quote.remainingDebt === 0n ? theme.palette.success.main : undefined}
           />
         </Stack>
       </Box>
 
+      {!debtKnown && debtRead.isError && (
+        <Alert severity="warning">{t('repay.debtCheckFailed', 'Could not read the current debt for this account.')}</Alert>
+      )}
       {noDebt && address && <Alert severity="info">{t('repay.noDebt', 'This position has no outstanding debt to repay.')}</Alert>}
       {exceedsBalance && (
         <Alert severity="warning">{t('repay.exceedsBalance', 'Repay amount exceeds your {symbol} wallet balance.', { symbol })}</Alert>
@@ -372,8 +387,10 @@ export default function RepayForm({
 function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-      <Typography color="text.secondary">{label}</Typography>
-      <Typography sx={{ textAlign: 'right', color: valueColor }}>{value}</Typography>
+      <Typography color="text.secondary" sx={{ flexShrink: 0 }}>
+        {label}
+      </Typography>
+      <Typography sx={{ textAlign: 'right', color: valueColor, overflowWrap: 'anywhere' }}>{value}</Typography>
     </Box>
   );
 }

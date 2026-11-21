@@ -10,7 +10,6 @@ import { EVAULT_ABI, EVC_ABI } from '@/contracts/evk';
 import TransactionLink from 'components/TransactionLink';
 import { TokenIcon } from 'components/TokenIcon';
 import useTranslate from 'hooks/useTranslate';
-import { withApprovalBuffer } from 'utils/repay';
 import { formatAssetOutput, normalizePointAmount } from 'utils/formatters';
 import { dispatchError, dispatchSuccess, dispatchWarning } from 'utils/snackbar';
 
@@ -243,23 +242,25 @@ export default function VaultActionForm({
         const freshBalance = wallet.data?.[0]?.result;
         const freshAllowance = wallet.data?.[1]?.result;
         const freshLimit = vault.data?.[0]?.result;
-        if (
-          !wallet.isSuccess ||
-          !vault.isSuccess ||
-          typeof freshBalance !== 'bigint' ||
-          typeof freshAllowance !== 'bigint' ||
-          typeof freshLimit !== 'bigint'
-        ) {
+        if (!wallet.isSuccess || typeof freshBalance !== 'bigint' || typeof freshAllowance !== 'bigint') {
           throw new Error(t('form.rpcUnavailable', 'RPC client is not available'));
         }
         liveAllowance = freshAllowance;
-        const maximum = minBigInt(freshBalance, freshLimit);
+        const maximum = typeof freshLimit === 'bigint' ? minBigInt(freshBalance, freshLimit) : freshBalance;
         if (maxSelected && amountRaw !== maximum) {
           setAmount(inputFromRaw(maximum, asset.decimals));
+          setMessage(t('form.maxUpdated', 'The maximum amount changed. Review the updated amount and press the button again.'));
+          setSeverity('warning');
           return;
         }
         const requiresApproval = amountRaw > liveAllowance;
-        if (amountRaw > maximum || requiresApproval !== needsApprove) return;
+        if (amountRaw > maximum || requiresApproval !== needsApprove) {
+          setMessage(
+            t('form.stateChanged', 'Your balance, allowance or the debt changed. Review the updated form and press the button again.')
+          );
+          setSeverity('warning');
+          return;
+        }
       }
 
       if (needsApprove) {
@@ -279,7 +280,7 @@ export default function VaultActionForm({
           await approve(0n);
         }
         setStep('approving');
-        await approve(maxSelected ? withApprovalBuffer(amountRaw) : amountRaw);
+        await approve(amountRaw);
         setMessage(
           t('form.approvalConfirmedRetry', 'Approval confirmed. Submit again to {action} {symbol}.', {
             action: actionVerb.toLowerCase(),
@@ -445,6 +446,22 @@ export default function VaultActionForm({
           </Typography>
           <Typography>{preview.data === undefined ? '-' : rawText(preview.data as bigint, shareDecimals)}</Typography>
         </Box>
+        {isOther && targetAccount && (
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 2,
+              paddingY: 1.5,
+              borderTop: `1px solid ${theme.palette.divider}`
+            }}
+          >
+            <Typography color="text.secondary" sx={{ flexShrink: 0 }}>
+              {t('form.receivingAccount', 'Receiving account')}
+            </Typography>
+            <Typography sx={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{targetAccount}</Typography>
+          </Box>
+        )}
         {showTargetShares && (
           <Box
             sx={{
