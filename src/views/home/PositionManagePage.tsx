@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useReadContract } from 'wagmi';
 import {
   Alert,
   Box,
@@ -20,25 +21,31 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import { Address, Hex, decodeFunctionResult, encodeFunctionData, formatUnits, isAddress } from 'viem';
-import { useAccount } from 'wagmi';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import { Address, Hex, decodeFunctionResult, encodeFunctionData, formatUnits, isAddress, type TransactionReceipt } from 'viem';
 
 import { fetchAccountPortfolio, fetchPrices, fetchVaultsBatch, rpcCall, tokenImageUrl } from '@/api/euler';
 import { useNetworkParam } from 'hooks/useNetworkParam';
+import useViewedAccount from 'hooks/useViewedAccount';
 import { ERC20_ABI, ERC4626_ABI } from '@/contracts/erc4626';
+import { EVAULT_ABI } from '@/contracts/evk';
 import BorrowForm from 'components/BorrowForm';
+import TransactionLink from 'components/TransactionLink';
 import RepayForm from 'components/RepayForm';
 import VaultActionForm from 'components/VaultActionForm';
 import ConnectButtonCustom from 'components/ConnectButtonCustom';
 import { TokenIcon } from 'components/TokenIcon';
+import { ViewedPositionBanner } from 'components/ViewedAccount';
 import YieldBreakdownInfo from 'components/YieldBreakdownInfo';
 import { useCopyToClipboard } from 'hooks/useCopyToClipboard';
 import useTranslate from 'hooks/useTranslate';
-import { formatShortUSDS } from 'utils/formatters';
+import { formatShortUSDS, shortenAddress } from 'utils/formatters';
+import { getPositionTarget, withViewedAccount } from 'utils/viewedAccount';
 
 // Refinance (moving debt to another market) is deferred like Multiply — the tab stays hidden until
 // the target-market picker + multi-controller EVC batch land. Flip to re-enable.
 const SHOW_REFINANCE = false;
+const TABS = ['repay', 'borrow', 'add', 'remove', 'refinance'];
 
 function fmtUsd(value: number): string {
   if (!Number.isFinite(value)) return '—';
@@ -91,18 +98,45 @@ async function resolveCollateralAsset(
 }
 
 export default function PositionManagePage() {
+  const viewed = useViewedAccount();
+  const t = useTranslate();
+  const { collateral = '', liability = '' } = useParams<{ collateral: string; liability: string }>();
+  const [params] = useSearchParams();
+  const subAccount = params.get('sub');
+  const { chainId } = useNetworkParam();
+  if (viewed.invalidAccount) {
+    return (
+      <Alert severity="error">{t('position.invalidAccount', 'The account address in this link is invalid. Correct it to continue.')}</Alert>
+    );
+  }
+  // Route identity owns the verified target and its receipt. Switching tabs keeps both.
+  const identity = JSON.stringify([chainId, collateral, liability, viewed.account, subAccount]).toLowerCase();
+  return (
+    <PositionManage key={identity} {...viewed} chainId={chainId} collateral={collateral} liability={liability} subAccount={subAccount} />
+  );
+}
+
+function PositionManage({
+  account,
+  connected,
+  requestedAccount,
+  isOther,
+  ownHref,
+  chainId,
+  collateral,
+  liability,
+  subAccount
+}: ReturnType<typeof useViewedAccount> & { chainId: number; collateral: string; liability: string; subAccount: string | null }) {
   const theme = useTheme();
   const t = useTranslate();
   const navigate = useNavigate();
   const copy = useCopyToClipboard();
-  const { address } = useAccount();
-  const { collateral = '', liability = '' } = useParams<{ collateral: string; liability: string }>();
-  const [params] = useSearchParams();
-  const { chainId } = useNetworkParam();
+  const [params, setParams] = useSearchParams();
+  const [verifiedTarget, setVerifiedTarget] = useState<Address>();
+  const [repayment, setRepayment] = useState<Pick<TransactionReceipt, 'transactionHash' | 'blockNumber'> & { message: string }>();
   const valid = isAddress(collateral) && isAddress(liability);
 
-  const tabParam = { repay: 0, borrow: 1, add: 2, remove: 3 }[params.get('tab') ?? 'repay'] ?? 0;
-  const [tab, setTab] = useState(tabParam);
+  const portfolioHref = withViewedAccount(`/portfolio?network=${chainId}`, requestedAccount);
 
   const vaultsQuery = useQuery({
     queryKey: ['euler', 'borrow-detail', chainId, collateral, liability],
@@ -110,9 +144,9 @@ export default function PositionManagePage() {
     queryFn: () => fetchVaultsBatch(chainId, [collateral, liability])
   });
   const portfolioQuery = useQuery({
-    queryKey: ['euler', 'portfolio', chainId, address],
-    enabled: Boolean(address),
-    queryFn: () => fetchAccountPortfolio(chainId, address as string),
+    queryKey: ['euler', 'portfolio', chainId, account],
+    enabled: Boolean(account),
+    queryFn: () => fetchAccountPortfolio(chainId, account as string),
     refetchInterval: 30_000
   });
 
@@ -122,15 +156,50 @@ export default function PositionManagePage() {
 
   // The same (collateral, liability) pair can be open on several sub-accounts, so the row that
   // linked here passes its own `sub`; without it fall back to the first match.
-  const subAccount = params.get('sub');
+  const selectedAccount = subAccount ?? verifiedTarget;
   const position = useMemo(() => {
     const matches = (portfolioQuery.data?.data?.portfolio?.borrows ?? []).filter(
       (entry) =>
         entry.borrowVault.address.toLowerCase() === liability.toLowerCase() &&
         entry.collateralVault.address.toLowerCase() === collateral.toLowerCase()
     );
-    return matches.find((entry) => entry.subAccount?.toLowerCase() === subAccount?.toLowerCase()) ?? matches[0];
-  }, [portfolioQuery.data, collateral, liability, subAccount]);
+    return selectedAccount === undefined
+      ? matches[0]
+      : matches.find((entry) => (entry.subAccount || account)?.toLowerCase() === selectedAccount.toLowerCase());
+  }, [portfolioQuery.data, collateral, liability, selectedAccount, account]);
+  const validSubInLink = !subAccount || isAddress(subAccount);
+  const matchedTarget = validSubInLink && position ? getPositionTarget(account, position.subAccount) : undefined;
+  useEffect(() => {
+    if (!verifiedTarget && portfolioQuery.isSuccess && matchedTarget) setVerifiedTarget(matchedTarget);
+  }, [verifiedTarget, portfolioQuery.isSuccess, matchedTarget]);
+
+  const targetAccount = validSubInLink && !position ? (verifiedTarget ?? account) : matchedTarget;
+  const targetSubAccount = targetAccount?.toLowerCase() === account?.toLowerCase() ? undefined : targetAccount;
+  const targetLoading = !verifiedTarget && !!account && portfolioQuery.isPending;
+  const targetUnavailable =
+    !targetAccount ||
+    (!verifiedTarget &&
+      ((isOther && portfolioQuery.isError) || (subAccount !== null && subAccount.toLowerCase() !== account?.toLowerCase() && !position)));
+  const settledDebt = useReadContract({
+    chainId,
+    address: valid ? (liability as Address) : undefined,
+    abi: EVAULT_ABI,
+    functionName: 'debtOf',
+    args: targetAccount ? [targetAccount] : undefined,
+    blockNumber: repayment?.blockNumber,
+    query: { enabled: !!repayment && valid && !!targetAccount, staleTime: Infinity }
+  });
+  const isOwnSubAccount = !isOther && !!targetAccount && targetAccount.toLowerCase() !== connected?.toLowerCase();
+  const ownerActionsLocked = isOther || isOwnSubAccount || targetLoading || targetUnavailable;
+  const isLockedTab = (index: number) => ownerActionsLocked && index !== 0 && index !== 2;
+  const selectedTab = TABS.indexOf(params.get('tab') ?? 'repay');
+  const tab = selectedTab < 0 || (selectedTab === 4 && !SHOW_REFINANCE) || isLockedTab(selectedTab) ? 0 : selectedTab;
+  const lockNotice =
+    isOther && account
+      ? t('position.ownerOnly', 'Only the owner of {address} can borrow or withdraw.', { address: shortenAddress(account) })
+      : isOwnSubAccount
+        ? t('position.subAccountOnly', "Borrowing and withdrawing on sub-accounts isn't supported here yet")
+        : undefined;
 
   const hasCollateralAsset = Boolean(position?.collateralVault.asset) || Boolean(collateralConfig?.asset) || Boolean(collateralVault);
   const resolvedCollateralQuery = useQuery({
@@ -174,10 +243,21 @@ export default function PositionManagePage() {
   const collateralSupplyApy = collateralVault?.supplyApy ?? position?.collateralVault.supplyApy ?? 0;
   const availableLiquidityUsd = borrowVault ? Math.max((borrowVault.totalSupplyUsd || 0) - (borrowVault.totalBorrowsUsd || 0), 0) : 0;
 
-  const refetchAll = () => {
-    void vaultsQuery.refetch();
-    void portfolioQuery.refetch();
+  const refetchAll = async () => {
+    await Promise.all([vaultsQuery.refetch(), portfolioQuery.refetch()]);
   };
+
+  const repaymentNotice = tab === 0 && repayment && (
+    <Alert severity="success" sx={{ mb: 2 }}>
+      {settledDebt.data === 0n && (
+        <Typography fontWeight={600}>
+          {t('position.closedAtBlock', 'Position closed at block {block}', { block: repayment.blockNumber.toString() })}
+        </Typography>
+      )}
+      <Typography variant="body2">{repayment.message}</Typography>
+      <TransactionLink chainId={chainId} hash={repayment.transactionHash} />
+    </Alert>
+  );
 
   const healthColor = (hf: number) =>
     hf >= 2 ? theme.palette.success.main : hf >= 1.25 ? theme.palette.warning.main : theme.palette.error.main;
@@ -186,12 +266,12 @@ export default function PositionManagePage() {
     return (
       <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
         <Typography color="error">{t('position.invalidPair', 'Invalid position address pair.')}</Typography>
-        <Button sx={{ marginTop: 2 }} startIcon={<ArrowBackIcon />} onClick={() => navigate(`/portfolio?network=${chainId}`)}>
+        <Button sx={{ marginTop: 2 }} startIcon={<ArrowBackIcon />} onClick={() => navigate(portfolioHref)}>
           {t('position.back', 'Back to Portfolio')}
         </Button>
       </Paper>
     );
-  if (!address)
+  if (!account)
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 320, textAlign: 'center', gap: 2 }}>
         <Typography variant="h3">{t('position.connectPrompt', 'Connect your wallet to manage this position.')}</Typography>
@@ -207,10 +287,11 @@ export default function PositionManagePage() {
   if (vaultsQuery.error || !borrowVault || !collateralConfig)
     return (
       <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}` }}>
+        {repaymentNotice}
         <Typography color="error">
           {t('position.collateralNotAccepted', 'This collateral is not accepted by the selected market.')}
         </Typography>
-        <Button sx={{ marginTop: 2 }} startIcon={<ArrowBackIcon />} onClick={() => navigate(`/portfolio?network=${chainId}`)}>
+        <Button sx={{ marginTop: 2 }} startIcon={<ArrowBackIcon />} onClick={() => navigate(portfolioHref)}>
           {t('position.back', 'Back to Portfolio')}
         </Button>
       </Paper>
@@ -225,7 +306,7 @@ export default function PositionManagePage() {
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, marginBottom: 2.5 }}>
-        <IconButton onClick={() => navigate(`/portfolio?network=${chainId}`)} aria-label={t('position.back', 'Back to Portfolio')}>
+        <IconButton onClick={() => navigate(portfolioHref)} aria-label={t('position.back', 'Back to Portfolio')}>
           <ArrowBackIcon />
         </IconButton>
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -245,22 +326,27 @@ export default function PositionManagePage() {
           <Typography variant="h2" sx={{ lineHeight: 1.1 }}>
             {collateralSymbol} → {borrowVault.asset.symbol}
           </Typography>
-          <Typography variant="body2" sx={{ color: theme.palette.grey[500] }} noWrap>
-            {t('position.subtitle', 'Manage your {borrow} position against {collateral}', {
-              borrow: borrowVault.asset.symbol,
-              collateral: collateralSymbol
-            })}
-          </Typography>
+          {!isOther && (
+            <Typography variant="body2" sx={{ color: theme.palette.grey[500] }} noWrap>
+              {t('position.subtitle', 'Manage your {borrow} position against {collateral}', {
+                borrow: borrowVault.asset.symbol,
+                collateral: collateralSymbol
+              })}
+            </Typography>
+          )}
         </Box>
       </Box>
 
+      {isOther && <ViewedPositionBanner account={account} connected={connected} ownHref={ownHref} subAccount={targetSubAccount} />}
       <Grid container spacing={2.5} alignItems="flex-start">
         {/* Info column */}
         <Grid size={{ xs: 12, md: 7 }} sx={{ order: { xs: 2, md: 1 } }}>
           <Stack spacing={2}>
             <Paper sx={{ padding: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 1 }}>
               <Typography variant="h3" sx={{ marginBottom: 2 }}>
-                {t('position.yourPosition', 'Your position')}
+                {isOther
+                  ? t('position.viewedTitle', 'Position of {address}', { address: shortenAddress(account) })
+                  : t('position.yourPosition', 'Your position')}
               </Typography>
               {position ? (
                 <Grid container spacing={2.5}>
@@ -326,18 +412,27 @@ export default function PositionManagePage() {
                 </Grid>
               ) : portfolioQuery.isPending ? (
                 <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 120 }}>
-                  <CircularProgress size={28} aria-label={t('position.loadingPosition', 'Loading your position')} />
+                  <CircularProgress
+                    size={28}
+                    aria-label={
+                      isOther ? t('position.loading', 'Loading position') : t('position.loadingPosition', 'Loading your position')
+                    }
+                  />
                 </Box>
               ) : portfolioQuery.isError ? (
                 <Alert severity="warning">
-                  {t('position.loadFailed', 'Your position could not be loaded. Retry in a moment — market data below is unaffected.')}
+                  {isOther
+                    ? t('position.viewedLoadFailed', 'Could not load the position for this address.')
+                    : t('position.loadFailed', 'Your position could not be loaded. Retry in a moment — market data below is unaffected.')}
                 </Alert>
               ) : (
                 <Alert severity="info">
-                  {t(
-                    'position.noOpenPosition',
-                    'No open position found for this pair on your account. Use the Borrow tab to open one, or check the selected network.'
-                  )}
+                  {isOther
+                    ? t('position.viewedNoOpenPosition', 'This address has no open position for this pair on the selected network.')
+                    : t(
+                        'position.noOpenPosition',
+                        'No open position found for this pair on your account. Use the Borrow tab to open one, or check the selected network.'
+                      )}
                 </Alert>
               )}
             </Paper>
@@ -376,6 +471,9 @@ export default function PositionManagePage() {
                 {t('common.addresses', 'Addresses')}
               </Typography>
               <Stack spacing={1.25}>
+                {isOwnSubAccount && targetSubAccount && (
+                  <AddressRow label={t('position.subAccount', 'Sub-account')} address={targetSubAccount} onCopy={copy.copyToClipboard} />
+                )}
                 <AddressRow label={t('common.collateralVault', 'Collateral vault')} address={collateral} onCopy={copy.copyToClipboard} />
                 <AddressRow label={t('common.borrowVault', 'Borrow vault')} address={liability} onCopy={copy.copyToClipboard} />
                 {collateralAssetAddress && (
@@ -392,25 +490,50 @@ export default function PositionManagePage() {
           <Paper sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, overflow: 'hidden' }}>
             <Tabs
               value={tab}
-              onChange={(_, value) => setTab(value)}
+              onChange={(_, value: number) => {
+                if (isLockedTab(value)) return;
+                const next = new URLSearchParams(params);
+                next.set('tab', TABS[value]);
+                setParams(next, { replace: true });
+              }}
               variant="fullWidth"
               aria-label={t('position.actionsLabel', 'Position actions')}
               sx={{ borderBottom: `1px solid ${theme.palette.divider}` }}
             >
               <Tab label={t('common.repay', 'Repay')} aria-label={t('position.tab.repay', 'Repay debt')} />
-              <Tab label={t('common.borrow', 'Borrow')} aria-label={t('position.tab.borrow', 'Borrow more')} />
+              <Tab
+                label={t('common.borrow', 'Borrow')}
+                aria-label={t('position.tab.borrow', 'Borrow more')}
+                disabled={ownerActionsLocked}
+                icon={lockNotice ? <LockOutlinedIcon fontSize="inherit" /> : undefined}
+                iconPosition="start"
+              />
               <Tab label={t('position.tab.addShort', 'Add')} aria-label={t('position.addCollateral', 'Add collateral')} />
-              <Tab label={t('position.tab.removeShort', 'Remove')} aria-label={t('position.removeCollateral', 'Remove collateral')} />
-              {SHOW_REFINANCE && <Tab label={t('position.refinance', 'Refinance')} />}
+              <Tab
+                label={t('position.tab.removeShort', 'Remove')}
+                aria-label={t('position.removeCollateral', 'Remove collateral')}
+                disabled={ownerActionsLocked}
+                icon={lockNotice ? <LockOutlinedIcon fontSize="inherit" /> : undefined}
+                iconPosition="start"
+              />
+              {SHOW_REFINANCE && <Tab label={t('position.refinance', 'Refinance')} disabled={ownerActionsLocked} />}
             </Tabs>
 
             <Box sx={{ padding: 2.5 }}>
-              {!collateralAssetAddress || collateralDecimals === undefined ? (
+              {repaymentNotice}
+              {targetLoading || !collateralAssetAddress || collateralDecimals === undefined ? (
                 <Box role="status" aria-live="polite" sx={{ display: 'grid', placeItems: 'center', minHeight: 180 }}>
                   <CircularProgress aria-label={t('position.loadingCollateral', 'Loading collateral details')} />
                 </Box>
+              ) : targetUnavailable || !targetAccount ? (
+                <Alert severity="warning">
+                  {t('position.targetUnavailable', 'Could not verify the account for this position. Open it from Portfolio.')}
+                </Alert>
               ) : tab === 0 ? (
                 <RepayForm
+                  key={`${chainId}:${liability}:${targetAccount}:${connected}`}
+                  targetAccount={targetAccount}
+                  isOther={isOther}
                   chainId={chainId}
                   liabilityVault={{
                     address: liability as Address,
@@ -423,7 +546,10 @@ export default function PositionManagePage() {
                   }}
                   assetPriceUsd={borrowPrice}
                   tokenLogoUrl={tokenImageUrl(chainId, borrowVault.asset.address)}
-                  onSuccess={refetchAll}
+                  onSuccess={({ transactionHash, blockNumber }, message) => {
+                    setRepayment({ transactionHash, blockNumber, message });
+                    return refetchAll();
+                  }}
                 />
               ) : tab === 1 ? (
                 <BorrowForm
@@ -444,6 +570,10 @@ export default function PositionManagePage() {
                 />
               ) : tab === 2 ? (
                 <VaultActionForm
+                  key={`${chainId}:${collateral}:${liability}:${targetAccount}:${connected}`}
+                  targetAccount={targetAccount}
+                  isOther={isOther}
+                  liabilityVault={liability as Address}
                   mode="supply"
                   chainId={chainId}
                   vaultAddress={collateral as Address}
@@ -473,6 +603,11 @@ export default function PositionManagePage() {
                     'Removing collateral is blocked by the vault if it would push your position past its liquidation LTV — the wallet simulation will revert before you sign.'
                   )}
                 </Alert>
+              )}
+              {lockNotice && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  {lockNotice}
+                </Typography>
               )}
             </Box>
           </Paper>
@@ -537,7 +672,7 @@ function AddressRow({ label, address, onCopy }: { label: string; address: string
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
       <Typography color="text.secondary">{label}</Typography>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography>{shortAddress(address)}</Typography>
+        <Typography title={address}>{shortAddress(address)}</Typography>
         <IconButton
           size="small"
           onClick={() => onCopy(address)}

@@ -3,12 +3,12 @@ import { parseAbi } from 'viem';
 // Euler Vault Kit (EVK) borrow-side surface, layered on top of the ERC-4626 vault interface.
 export const EVAULT_ABI = parseAbi([
   'function EVC() view returns (address)',
+  'error E_RepayTooMuch()',
   'function asset() view returns (address)',
   'function debtOf(address account) view returns (uint256)',
   'function deposit(uint256 amount, address receiver) returns (uint256)',
   'function borrow(uint256 amount, address receiver) returns (uint256)',
-  // repay pulls the underlying from the caller and reduces receiver's debt; amount = type(uint256).max
-  // repays the full debt (capped at the caller's balance).
+  // Repay pulls the underlying from the caller. The max amount selector uses the receiver's exact current debt.
   'function repay(uint256 amount, address receiver) returns (uint256)'
 ]);
 
